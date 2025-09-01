@@ -27,6 +27,7 @@ export default function Ruleta() {
   const [showConfig, setShowConfig] = useState(false);
   const [tempOptions, setTempOptions] = useState([...ROULETTE_OPTIONS]);
   const [rouletteOptions, setRouletteOptions] = useState([...ROULETTE_OPTIONS]);
+  const [showWinner, setShowWinner] = useState(false);
   const [donations, setDonations] = useState([
     { id: 1, user: 'streamer123', gift: 'Rosa', count: 5, coins: 250, avatar: '🌹', timestamp: Date.now() - 5000 },
     { id: 2, user: 'gamer456', gift: 'Diamante', count: 1, coins: 500, avatar: '💎', timestamp: Date.now() - 15000 },
@@ -41,32 +42,52 @@ export default function Ruleta() {
     setIsSpinning(true);
     setWinner(null);
 
-    // Selección por probabilidades usando las opciones actuales de la ruleta
-    const random = Math.random();
-    let accumulator = 0;
-    let selectedOption = rouletteOptions[0];
-    for (const option of rouletteOptions) {
-      accumulator += option.probability || (1 / rouletteOptions.length);
-      if (random <= accumulator) { selectedOption = option; break; }
-    }
-
-    // Rotación
-    const optionAngle = 360 / rouletteOptions.length;
-    const selectedIndex = rouletteOptions.indexOf(selectedOption);
-    const targetAngle = selectedIndex * optionAngle;
-    const spins = 5 + Math.random() * 3;
-    const finalRotation = rotation + (spins * 360) + (360 - targetAngle) + (Math.random() * optionAngle);
-    setRotation(finalRotation);
+    // Calcular rotación aleatoria (múltiples vueltas + ángulo final)
+    const spins = 5 + Math.random() * 5; // Entre 5 y 10 vueltas
+    const finalAngle = Math.random() * 360; // Ángulo final aleatorio
+    const totalRotation = rotation + (spins * 360) + finalAngle;
+    
+    setRotation(totalRotation);
 
     // Stats
     setStats((p) => ({ ...p, totalSpins: p.totalSpins + 1 }));
 
-    // Partículas si raro/épico
-    if (['legendary', 'epic'].includes(selectedOption.rarity)) createParticles();
+    // Partículas decorativas
+    createParticles();
 
     setTimeout(() => {
+      // Calcular en qué posición se detuvo la ruleta
+      const normalizedRotation = totalRotation % 360;
+      const optionAngle = 360 / rouletteOptions.length;
+      
+      // La flecha apunta hacia arriba (0°), calculamos desde esa posición
+      // Como la ruleta gira en sentido horario, invertimos el cálculo
+      let adjustedRotation = (360 - normalizedRotation) % 360;
+      
+      // Ajustar por el punto de inicio de cada segmento (centro del segmento)
+      adjustedRotation = (adjustedRotation + (optionAngle / 2)) % 360;
+      
+      const selectedIndex = Math.floor(adjustedRotation / optionAngle);
+      
+      // Asegurar que el índice esté dentro del rango
+      const winnerIndex = selectedIndex >= rouletteOptions.length ? 0 : selectedIndex;
+      const selectedOption = rouletteOptions[winnerIndex];
+
+      console.log('Rotación total:', totalRotation);
+      console.log('Rotación normalizada:', normalizedRotation);
+      console.log('Rotación ajustada:', adjustedRotation);
+      console.log('Índice seleccionado:', winnerIndex);
+      console.log('Elemento ganador:', selectedOption.label);
+
       setWinner(selectedOption);
+      setShowWinner(true);
       setIsSpinning(false);
+      
+      // Ocultar ganador después de 5 segundos
+      setTimeout(() => {
+        setShowWinner(false);
+        setTimeout(() => setWinner(null), 500); // Esperar a que termine la animación
+      }, 5000);
     }, 4000);
   };
 
@@ -75,6 +96,7 @@ export default function Ruleta() {
     setStats({ totalSpins: 0, totalGifts: 0, totalCoins: 0, viewers: 0 });
     setRotation(0);
     setWinner(null);
+    setShowWinner(false);
     setDonations([]);
     setParticles([]);
   };
@@ -491,15 +513,15 @@ export default function Ruleta() {
           </div>
 
           {/* Resultado ganador - flotante */}
-          {winner && (
+          {winner && showWinner && (
             <div style={{
               position: 'fixed',
               top: '50%',
               left: '50%',
               transform: 'translate(-50%, -50%)',
               zIndex: 999,
-              animation: 'bounce 0.5s ease-out',
-              pointerEvents: 'none'
+              animation: showWinner ? 'bounce 0.5s ease-out' : 'fadeOut 0.5s ease-out',
+              pointerEvents: 'auto'
             }}>
               <div style={{
                 background: 'linear-gradient(45deg, #fbbf24, #f59e0b, #ef4444)',
@@ -512,6 +534,32 @@ export default function Ruleta() {
                 overflow: 'hidden',
                 textAlign: 'center'
               }}>
+                {/* Botón de cerrar */}
+                <button
+                  onClick={() => {
+                    setShowWinner(false);
+                    setTimeout(() => setWinner(null), 500);
+                  }}
+                  style={{
+                    position: 'absolute',
+                    top: '10px',
+                    right: '10px',
+                    background: 'rgba(0, 0, 0, 0.3)',
+                    border: 'none',
+                    borderRadius: '50%',
+                    width: '30px',
+                    height: '30px',
+                    color: 'white',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '1rem',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  ✕
+                </button>
                 <div style={{
                   position: 'absolute',
                   inset: 0,
@@ -522,14 +570,28 @@ export default function Ruleta() {
                   <h2 style={{
                     fontSize: '2.5rem',
                     fontWeight: 'bold',
-                    marginBottom: '8px',
+                    marginBottom: '16px',
                     animation: 'pulse 2s infinite'
                   }}>🎉 ¡GANADOR! 🎉</h2>
+                  
+                  {/* Emoji del elemento ganador */}
+                  <div style={{
+                    fontSize: '4rem',
+                    marginBottom: '12px',
+                    animation: 'bounce 1s infinite'
+                  }}>
+                    {winner.emoji}
+                  </div>
+                  
+                  {/* Nombre del elemento ganador */}
                   <p style={{
-                    fontSize: '3rem',
+                    fontSize: '2.5rem',
                     fontWeight: '900',
-                    marginBottom: '8px'
-                  }}>{winner.label}</p>
+                    marginBottom: '8px',
+                    textShadow: '2px 2px 4px rgba(0,0,0,0.5)'
+                  }}>
+                    {winner.label}
+                  </p>
                   <p style={{
                     fontSize: '1.25rem',
                     opacity: 0.9,
@@ -1019,6 +1081,17 @@ export default function Ruleta() {
           75%, 100% {
             transform: scale(2);
             opacity: 0;
+          }
+        }
+
+        @keyframes fadeOut {
+          from {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
+          }
+          to {
+            opacity: 0;
+            transform: translate(-50%, -50%) scale(0.8);
           }
         }
       `}</style>
