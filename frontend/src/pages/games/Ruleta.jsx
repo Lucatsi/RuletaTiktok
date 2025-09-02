@@ -14,6 +14,7 @@ function Ruleta() {
   const [donorTotals, setDonorTotals] = useState({});
   const lastLikeTotalRef = useRef({});
   const seenLikesRef = useRef(new Set());
+  const seenGiftsRef = useRef(new Set());
   const [chatMessages, setChatMessages] = useState([]);
   const seenMessagesRef = useRef(new Set());
   const [notification, setNotification] = useState(null);
@@ -28,6 +29,11 @@ function Ruleta() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [acceptingParticipants, setAcceptingParticipants] = useState(false);
+  // Modo: 'classic' (eliminación) o 'donation' (vidas)
+  const [mode, setMode] = useState('classic');
+  // Donaciones: jugadores con vidas acumuladas (1 moneda = 1 vida)
+  const [donatePlayers, setDonatePlayers] = useState([]); // [{ key, name, lives, color }]
+  const donateMapRef = useRef(new Map());
 
   // Configuraciones y modal
   const [showConfig, setShowConfig] = useState(false);
@@ -288,7 +294,7 @@ function Ruleta() {
       };
       setChatMessages(prev => [item, ...prev].slice(0, 150));
     };
-    const onLike = (ev) => {
+  const onLike = (ev) => {
   // Confirmar conexión al recibir likes
   setIsConnected(true);
       const u = getDisplayName(ev);
@@ -318,6 +324,21 @@ function Ruleta() {
       const count = Number(gift?.giftCount ?? gift?.count ?? gift?.repeatCount ?? 1);
       const coins = Number(gift?.coinsValue ?? gift?.coins ?? gift?.diamondCount ?? 0);
       const name = getDisplayName(gift);
+      // Dedupe de gifts: firma por usuario+gift+coins+count dentro de 5s
+      try {
+        const giftName = gift?.giftName ?? gift?.gift ?? 'Gift';
+        const bucket = Math.floor((Date.now()) / 5000); // ventana 5s
+        const sig = `${normalize(name)}|${normalize(giftName)}|${coins}|${count}|${bucket}`;
+        if (seenGiftsRef.current.has(sig)) {
+          return;
+        }
+        seenGiftsRef.current.add(sig);
+        if (seenGiftsRef.current.size > 800) {
+          // recorte básico para no crecer infinito
+          const arr = Array.from(seenGiftsRef.current);
+          seenGiftsRef.current = new Set(arr.slice(-600));
+        }
+      } catch {}
       const donation = {
         id: gift?.id || `${Date.now()}-${Math.random()}`,
         user: name,
@@ -325,18 +346,39 @@ function Ruleta() {
         count,
         gift: gift?.giftName ?? gift?.gift ?? 'Gift',
         coins,
-        lifeAdded: Math.max(0, Math.floor(coins / 5)),
+        lifeAdded: Math.max(0, Math.floor(coins)),
         type: 'gift',
         timestamp: Date.now()
       };
       setDonations(prev => [donation, ...prev].slice(0, 200));
       if (coins > 0) {
         setDonorTotals(prev => ({ ...prev, [name]: (prev[name] || 0) + coins }));
+        // Modo donaciones: acumular vidas 1:1 por usuario
+        const raw = (name || '').toString().replace(/^@+/, '').trim();
+        const key = normalize(raw);
+        if (key) {
+          setDonatePlayers(prev => {
+            const map = new Map(donateMapRef.current);
+            const existing = map.get(key);
+            const color = existing?.color || colorFromName(raw);
+            const updated = {
+              key,
+              name: existing?.name || raw,
+              color,
+              lives: (existing?.lives || 0) + Math.max(0, Math.floor(coins))
+            };
+            map.set(key, updated);
+            donateMapRef.current = map;
+            return Array.from(map.values());
+          });
+        }
       }
       setStats(prev => ({ ...prev, totalGifts: prev.totalGifts + 1, totalCoins: prev.totalCoins + (coins || 0) }));
       setNotification({ title: `Gracias @${donation.user}!`, message: `x${donation.count} ${donation.gift}`, coins: donation.coins, emoji: '🎁' });
-      // Auto-giro por donación
-      spinRoulette(true, donation.id);
+      // Auto-giro solo en modo donaciones
+      if (mode === 'donation') {
+        spinRoulette(true, donation.id);
+      }
     };
 
     socketService.onTikTokConnected(onConnected);
@@ -354,7 +396,7 @@ function Ruleta() {
     socketService.removeAllEventListeners('tiktok-gift');
     socketService.removeAllEventListeners('tiktok-viewers');
     };
-  }, [user, acceptingParticipants]);
+  }, [user, acceptingParticipants, mode]);
 
   const handleManualReconnect = () => {
     if (!user) return;
@@ -363,18 +405,34 @@ function Ruleta() {
   };
 
   // Lógica de la ruleta
+  // Construir snapshot de opciones para modo donaciones
+  const buildDonationOptionsSnapshot = () => {
+    return donatePlayers
+      .filter(p => (p?.lives || 0) > 0)
+      .map(p => ({
+        label: `@${p.name} ❤️ ${p.lives}`,
+        color: p.color || colorFromName(p.name),
+        textColor: '#ffffff',
+        emoji: '❤️',
+        probability: Math.max(1, Number(p.lives) || 1),
+        rarity: 'common',
+        donorKey: p.key
+      }));
+  };
+
   const spinRoulette = async (triggeredByDonation = false, donationId = null) => {
-    if (isSpinning || rouletteOptions.length === 0) return;
+    const current = mode === 'donation' ? buildDonationOptionsSnapshot() : [...rouletteOptions];
+    if (isSpinning || current.length === 0) return;
     // Si solo queda 1 opción, ya hay ganador final sin girar
-    if (rouletteOptions.length === 1) {
-      const only = rouletteOptions[0];
+    if (current.length === 1) {
+      const only = current[0];
       setWinner(only);
       setIsFinalWinner(true);
       setShowWinner(true);
       return;
     }
     // Congelar opciones durante este giro para que no cambie la geometría
-    const optionsSnapshot = [...rouletteOptions];
+    const optionsSnapshot = [...current];
     const anglePer = 360 / optionsSnapshot.length;
     const extraSpins = 5 + Math.floor(Math.random() * 3);
     // Ángulo aleatorio para que el ganador sea determinado por la flecha
@@ -434,39 +492,68 @@ function Ruleta() {
         console.error('Error al registrar el giro:', e);
       }
 
-      // Modo eliminación: remover la opción seleccionada del tablero
-      setRouletteOptions(prev => {
-        // Preferir coincidencia por contenido para evitar errores si la lista cambió durante el giro
-        let idx = prev.findIndex(o =>
-          o && selectedOption &&
-          o.label === selectedOption.label &&
-          o.color === selectedOption.color &&
-          (o.emoji || '') === (selectedOption.emoji || '')
-        );
-        if (idx === -1) {
-          // Fallback al índice calculado contra el snapshot si las longitudes son iguales
-          if (prev.length === optionsSnapshot.length && selectedIndex >= 0 && selectedIndex < prev.length) {
-            idx = selectedIndex;
+      if (mode === 'classic') {
+        // Modo eliminación: remover la opción seleccionada del tablero
+        setRouletteOptions(prev => {
+          // Preferir coincidencia por contenido para evitar errores si la lista cambió durante el giro
+          let idx = prev.findIndex(o =>
+            o && selectedOption &&
+            o.label === selectedOption.label &&
+            o.color === selectedOption.color &&
+            (o.emoji || '') === (selectedOption.emoji || '')
+          );
+          if (idx === -1) {
+            // Fallback al índice calculado contra el snapshot si las longitudes son iguales
+            if (prev.length === optionsSnapshot.length && selectedIndex >= 0 && selectedIndex < prev.length) {
+              idx = selectedIndex;
+            }
           }
+          let next = prev;
+          if (idx !== -1) {
+            next = [...prev.slice(0, idx), ...prev.slice(idx + 1)];
+          }
+          // Persistir solo participantes si aplica
+          try { if (user?.id) saveParticipantsToStorage(user.id, next); } catch {}
+          // Mantener en tempOptions también
+          setTempOptions(next);
+          // Si queda 1, declararlo ganador final
+          if (next.length === 1) {
+            setTimeout(() => {
+              setWinner(next[0]);
+              setIsFinalWinner(true);
+              setShowWinner(true);
+            }, 200); // pequeño delay tras cerrar el modal anterior
+          }
+          return next;
+        });
+      } else {
+        // Modo donaciones: restar 1 vida al ganador, eliminar si queda en 0
+        const k = selectedOption?.donorKey;
+        if (k) {
+          setDonatePlayers(prev => {
+            const map = new Map(prev.map(p => [p.key, { ...p }]));
+            const item = map.get(k);
+            if (!item) return prev;
+            item.lives = Math.max(0, (item.lives || 0) - 1);
+            if (item.lives <= 0) {
+              map.delete(k);
+            } else {
+              map.set(k, item);
+            }
+            const next = Array.from(map.values());
+            donateMapRef.current = new Map(next.map(p => [p.key, p]));
+            const alive = next.filter(p => (p.lives || 0) > 0);
+            if (alive.length === 1) {
+              setTimeout(() => {
+                setWinner({ label: `@${alive[0].name}`, emoji: '🏆' });
+                setIsFinalWinner(true);
+                setShowWinner(true);
+              }, 200);
+            }
+            return next;
+          });
         }
-        let next = prev;
-        if (idx !== -1) {
-          next = [...prev.slice(0, idx), ...prev.slice(idx + 1)];
-        }
-        // Persistir solo participantes si aplica
-        try { if (user?.id) saveParticipantsToStorage(user.id, next); } catch {}
-        // Mantener en tempOptions también
-        setTempOptions(next);
-        // Si queda 1, declararlo ganador final
-        if (next.length === 1) {
-          setTimeout(() => {
-            setWinner(next[0]);
-            setIsFinalWinner(true);
-            setShowWinner(true);
-          }, 200); // pequeño delay tras cerrar el modal anterior
-        }
-        return next;
-      });
+      }
 
       // Ocultar ganador luego de 5s
       setTimeout(() => {
@@ -853,6 +940,41 @@ function Ruleta() {
               }}>
                 👍 {stats.totalLikes.toLocaleString()} likes
               </div>
+              {/* Botones de modo en la misma línea */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button
+                  onClick={() => setMode('classic')}
+                  style={{
+                    background: mode === 'classic' ? 'linear-gradient(135deg, #8b5cf6, #7c3aed)' : 'rgba(255,255,255,0.1)',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    borderRadius: '9999px',
+                    padding: '6px 10px',
+                    color: 'white',
+                    fontWeight: 'bold',
+                    cursor: 'pointer',
+                    fontSize: '0.8rem',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
+                  }}
+                >
+                  🎯 Eliminación
+                </button>
+                <button
+                  onClick={() => setMode('donation')}
+                  style={{
+                    background: mode === 'donation' ? 'linear-gradient(135deg, #f59e0b, #d97706)' : 'rgba(255,255,255,0.1)',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    borderRadius: '9999px',
+                    padding: '6px 10px',
+                    color: 'white',
+                    fontWeight: 'bold',
+                    cursor: 'pointer',
+                    fontSize: '0.8rem',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
+                  }}
+                >
+                  ❤️ Donaciones
+                </button>
+              </div>
               {!isConnected && (user?.tiktokUsername || user?.tiktok_username) && (
                 <button
                   onClick={handleManualReconnect}
@@ -1055,8 +1177,8 @@ function Ruleta() {
                     border: '4px solid rgba(255, 255, 255, 0.5)'
                   }}>
           <svg width="100%" height="100%" viewBox="0 0 640 640">
-                      {rouletteOptions.map((option, index) => {
-                        const angle = 360 / rouletteOptions.length;
+                      {(mode === 'donation' ? buildDonationOptionsSnapshot() : rouletteOptions).map((option, index, arr) => {
+                        const angle = 360 / arr.length;
                         const startAngle = index * angle;
                         const endAngle = (index + 1) * angle;
                         const startRad = (startAngle - 90) * Math.PI / 180;
@@ -1221,6 +1343,8 @@ function Ruleta() {
               </div>
             </div>
           </div>
+
+          {/* Selector de modo movido al header superior */}
 
           {/* (Botones laterales izquierdos: Resetear y Configurar) */}
 
