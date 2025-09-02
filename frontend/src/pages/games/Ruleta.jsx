@@ -159,8 +159,11 @@ function Ruleta() {
       const onViewers = (payload) => {
         const v = Number(payload?.viewerCount ?? payload?.viewers ?? 0) || 0;
         setStats(prev => ({ ...prev, viewers: v }));
+        if (v > 0) setIsConnected(true);
       };
     const onChat = (msg) => {
+  // Cualquier evento de chat confirma conexión al live
+  setIsConnected(true);
       // Dedupe: usar id si viene; si no, construir firma estable por 2s
       const baseUser = msg?.user || msg?.username || msg?.uniqueId || 'u';
       const baseText = (msg?.message || msg?.comment || '').trim();
@@ -173,14 +176,16 @@ function Ruleta() {
         seenMessagesRef.current = new Set(Array.from(seenMessagesRef.current).slice(-300));
       }
 
-  // Detectar frase "yo quiero participar" (tolerante a tildes/casos) o variantes
+  // Detectar frase "yo quiero participar" (tolerante a tildes/casos/emoji/puntuación)
   const norm = normalize(baseText);
-  const wantsToJoin = ['yo quiero participar', 'quiero participar'].some(p => norm.includes(p));
+  const cleaned = norm.replace(/[^a-z0-9\s@]/g, ' ').replace(/\s+/g, ' ').trim();
+  // Acepta "yo quiero participar", "quiero participar", "kiero participar" y variantes con typo como "partcipar"
+  const wantsToJoin = /(\byo\s+)?(quiero|kiero)\s+part/.test(cleaned);
   if (wantsToJoin) {
         const key = normalize(msg?.username || msg?.uniqueId || baseUser);
         if (!participantsRef.current.has(key)) {
           participantsRef.current.add(key);
-          const disp = getDisplayName(msg);
+          const disp = (getDisplayName(msg) || '').toString().replace(/^@+/, '').trim();
           const opt = {
             label: `@${disp}`,
             color: colorFromName(disp),
@@ -203,6 +208,8 @@ function Ruleta() {
       setChatMessages(prev => [item, ...prev].slice(0, 150));
     };
     const onLike = (ev) => {
+  // Confirmar conexión al recibir likes
+  setIsConnected(true);
       const u = getDisplayName(ev);
       const totalLikeCount = Number(ev?.totalLikeCount);
       const likeInc = Math.max(1, Number(ev?.likeCount) || 0); // contar 1 por cada like del evento
@@ -225,6 +232,8 @@ function Ruleta() {
       }
     };
     const onGift = (gift) => {
+  // Confirmar conexión al recibir gifts
+  setIsConnected(true);
       const count = Number(gift?.giftCount ?? gift?.count ?? gift?.repeatCount ?? 1);
       const coins = Number(gift?.coinsValue ?? gift?.coins ?? gift?.diamondCount ?? 0);
       const name = getDisplayName(gift);
@@ -725,8 +734,108 @@ function Ruleta() {
 
           {/* (Título y subtítulo removidos) */}
 
-          {/* Ruleta principal */}
+          {/* Ruleta principal + botones laterales */}
           <div style={{ position: 'relative', marginBottom: '32px' }}>
+            {/* Acciones laterales (izquierda) */}
+            <div style={{
+              position: 'absolute',
+              top: '50%',
+              left: '-120px',
+              transform: 'translateY(-50%)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '10px',
+              zIndex: 35
+            }}>
+              <button
+                onClick={openConfig}
+                disabled={loading}
+                style={{
+                  background: 'linear-gradient(135deg, #10b981, #059669)',
+                  border: 'none',
+                  borderRadius: '12px',
+                  padding: '10px 14px',
+                  color: 'white',
+                  fontWeight: 'bold',
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  fontSize: '0.85rem',
+                  boxShadow: '0 4px 15px rgba(16, 185, 129, 0.3)',
+                  opacity: loading ? 0.6 : 1
+                }}
+              >
+                ⚙️ Configurar
+              </button>
+              <button
+                onClick={resetStats}
+                disabled={loading}
+                style={{
+                  background: 'linear-gradient(135deg, #ef4444, #dc2626)',
+                  border: 'none',
+                  borderRadius: '12px',
+                  padding: '10px 14px',
+                  color: 'white',
+                  fontWeight: 'bold',
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  fontSize: '0.85rem',
+                  boxShadow: '0 4px 15px rgba(239, 68, 68, 0.3)',
+                  opacity: loading ? 0.6 : 1
+                }}
+              >
+                🔄 Resetear
+              </button>
+            </div>
+
+            {/* Acciones laterales (derecha) */}
+            <div style={{
+              position: 'absolute',
+              top: '50%',
+              right: '-120px',
+              transform: 'translateY(-50%)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '10px',
+              zIndex: 35
+            }}>
+              <button
+                onClick={() => {
+                  setShowHistory(!showHistory);
+                  if (!showHistory) loadSpinHistory();
+                }}
+                disabled={loading}
+                style={{
+                  background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
+                  border: 'none',
+                  borderRadius: '12px',
+                  padding: '10px 14px',
+                  color: 'white',
+                  fontWeight: 'bold',
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  fontSize: '0.85rem',
+                  boxShadow: '0 4px 15px rgba(139, 92, 246, 0.3)',
+                  opacity: loading ? 0.6 : 1
+                }}
+              >
+                📊 Historial
+              </button>
+              <button
+                onClick={deleteHistory}
+                disabled={loading || !currentConfigId}
+                style={{
+                  background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                  border: 'none',
+                  borderRadius: '12px',
+                  padding: '10px 14px',
+                  color: 'white',
+                  fontWeight: 'bold',
+                  cursor: (loading || !currentConfigId) ? 'not-allowed' : 'pointer',
+                  fontSize: '0.85rem',
+                  boxShadow: '0 4px 15px rgba(245, 158, 11, 0.3)',
+                  opacity: (loading || !currentConfigId) ? 0.6 : 1
+                }}
+              >
+                🗑️ Borrar
+              </button>
+            </div>
             {/* Base de la ruleta */}
             <div style={{ position: 'relative' }}>
               {/* Soporte/Base */}
@@ -1056,105 +1165,6 @@ function Ruleta() {
             {isSpinning ? '🌀 GIRANDO...' : '🎰 GIRAR RULETA'}
           </button>
 
-          {/* Botones de configuración y reseteo - más abajo */}
-          <div style={{
-            position: 'absolute',
-                bottom: '-80px',
-            right: '50%',
-            transform: 'translateX(50%)',
-                width: '200px',
-                height: '100px',
-            zIndex: 25,
-            flexWrap: 'wrap',
-            justifyContent: 'center'
-          }}>
-            {/* Botón de configuración */}
-            <button
-              onClick={openConfig}
-              disabled={loading}
-              style={{
-                background: 'linear-gradient(135deg, #10b981, #059669)',
-                border: 'none',
-                borderRadius: '12px',
-                padding: '12px 16px',
-                color: 'white',
-                fontWeight: 'bold',
-                cursor: loading ? 'not-allowed' : 'pointer',
-                fontSize: '0.875rem',
-                boxShadow: '0 4px 15px rgba(16, 185, 129, 0.3)',
-                transition: 'all 0.3s ease',
-                opacity: loading ? 0.6 : 1
-              }}
-            >
-              ⚙️ CONFIGURAR
-            </button>
-            
-            {/* Botón de reseteo */}
-            <button
-              onClick={resetStats}
-              disabled={loading}
-              style={{
-                background: 'linear-gradient(135deg, #ef4444, #dc2626)',
-                border: 'none',
-                borderRadius: '12px',
-                padding: '12px 16px',
-                color: 'white',
-                fontWeight: 'bold',
-                cursor: loading ? 'not-allowed' : 'pointer',
-                fontSize: '0.875rem',
-                boxShadow: '0 4px 15px rgba(239, 68, 68, 0.3)',
-                transition: 'all 0.3s ease',
-                opacity: loading ? 0.6 : 1
-              }}
-            >
-              🔄 RESETEAR
-            </button>
-
-            {/* Botón de historial */}
-            <button
-              onClick={() => {
-                setShowHistory(!showHistory);
-                if (!showHistory) loadSpinHistory();
-              }}
-              disabled={loading}
-              style={{
-                background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
-                border: 'none',
-                borderRadius: '12px',
-                padding: '12px 16px',
-                color: 'white',
-                fontWeight: 'bold',
-                cursor: loading ? 'not-allowed' : 'pointer',
-                fontSize: '0.875rem',
-                boxShadow: '0 4px 15px rgba(139, 92, 246, 0.3)',
-                transition: 'all 0.3s ease',
-                opacity: loading ? 0.6 : 1
-              }}
-            >
-              📊 HISTORIAL
-            </button>
-
-            {/* Botón para eliminar historial */}
-            <button
-              onClick={deleteHistory}
-              disabled={loading || !currentConfigId}
-              style={{
-                background: 'linear-gradient(135deg, #f59e0b, #d97706)',
-                border: 'none',
-                borderRadius: '12px',
-                padding: '12px 16px',
-                color: 'white',
-                fontWeight: 'bold',
-                cursor: (loading || !currentConfigId) ? 'not-allowed' : 'pointer',
-                fontSize: '0.875rem',
-                boxShadow: '0 4px 15px rgba(245, 158, 11, 0.3)',
-                transition: 'all 0.3s ease',
-                opacity: (loading || !currentConfigId) ? 0.6 : 1
-              }}
-            >
-              �️ BORRAR
-            </button>
-          </div>
 
           {/* Stats rápidas - abajo a la izquierda */}
           <div style={{
