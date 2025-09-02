@@ -48,9 +48,11 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, setSettings] = useState({
-    tiktokUsername: user?.tiktokUsername || '',
+  tiktokUsername: user?.tiktokUsername || '',
+  tiktokEmail: user?.tiktokEmail || '',
     gameSettings: user?.gameSettings || {}
   });
+  const [formErrors, setFormErrors] = useState({ username: '', email: '' });
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -120,9 +122,30 @@ const Dashboard = () => {
       ...prev,
       [field]: value
     }));
+
+    // Validación básica inmediata
+    if (field === 'tiktokUsername') {
+      const hasAt = (value || '').includes('@');
+      setFormErrors(prev => ({ ...prev, username: hasAt ? 'No incluyas @ en el usuario' : '' }));
+    }
+    if (field === 'tiktokEmail') {
+      const isValid = !value || /.+@.+\..+/.test(value);
+      setFormErrors(prev => ({ ...prev, email: isValid ? '' : 'Correo no válido' }));
+    }
   };
 
   const handleSettingsSave = async () => {
+    // Validaciones antes de guardar
+    const hasAt = (settings.tiktokUsername || '').includes('@');
+    const emailOk = !settings.tiktokEmail || /.+@.+\..+/.test(settings.tiktokEmail);
+    if (hasAt || !emailOk) {
+      setFormErrors({
+        username: hasAt ? 'No incluyas @ en el usuario' : '',
+        email: emailOk ? '' : 'Correo no válido'
+      });
+      return;
+    }
+
     setLoading(true);
     try {
       const response = await authService.updateSettings(settings);
@@ -600,43 +623,70 @@ const Dashboard = () => {
           fontWeight: 'bold',
           fontSize: '1.5rem',
         }}>
-          ⚙️ Configuraciones
+          ⚙️ Configurar Perfil
         </DialogTitle>
         <DialogContent sx={{ p: 3 }}>
-          <TextField
-            fullWidth
-            label="Usuario de TikTok"
-            value={settings.tiktokUsername}
-            onChange={(e) => handleSettingsChange('tiktokUsername', e.target.value)}
-            margin="normal"
-            helperText="Tu nombre de usuario en TikTok (sin @)"
-            placeholder="ej: tu_usuario_tiktok"
-            sx={{
-              '& .MuiOutlinedInput-root': {
-                '& fieldset': {
-                  borderColor: 'rgba(255,255,255,0.3)',
-                },
-                '&:hover fieldset': {
-                  borderColor: '#667eea',
-                },
-              },
-            }}
-          />
-          
-          {settings.tiktokUsername && (
-            <Box mt={3}>
-              <Chip 
-                label={`@${settings.tiktokUsername}`} 
-                color="primary" 
-                variant="filled"
-                size="medium"
-                sx={{ 
-                  fontWeight: 'bold',
-                  background: 'linear-gradient(135deg, #667eea, #764ba2)',
+          <Box sx={{ display: 'grid', gap: 2 }}>
+            <Box>
+              <Typography variant="subtitle2" sx={{ mb: 1, opacity: 0.8 }}>Cuenta de TikTok</Typography>
+              <TextField
+                fullWidth
+                label="Usuario de TikTok (sin @)"
+                value={settings.tiktokUsername}
+                onChange={(e) => handleSettingsChange('tiktokUsername', e.target.value.trim())}
+                error={!!formErrors.username}
+                helperText={formErrors.username || 'Ej: Sombrer0verde'}
+                placeholder="tu_usuario"
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    '& fieldset': { borderColor: 'rgba(255,255,255,0.3)' },
+                    '&:hover fieldset': { borderColor: '#667eea' },
+                  },
                 }}
               />
             </Box>
-          )}
+
+            <Box>
+              <TextField
+                fullWidth
+                label="Correo vinculado a TikTok (opcional)"
+                type="email"
+                value={settings.tiktokEmail}
+                onChange={(e) => handleSettingsChange('tiktokEmail', e.target.value)}
+                error={!!formErrors.email}
+                helperText={formErrors.email || 'Se usa solo como referencia'}
+                placeholder="tu_correo@dominio.com"
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    '& fieldset': { borderColor: 'rgba(255,255,255,0.3)' },
+                    '&:hover fieldset': { borderColor: '#667eea' },
+                  },
+                }}
+              />
+            </Box>
+
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+              <Chip
+                label={settings.tiktokUsername ? `@${settings.tiktokUsername}` : 'Usuario no configurado'}
+                color={settings.tiktokUsername ? 'primary' : 'default'}
+                variant={settings.tiktokUsername ? 'filled' : 'outlined'}
+              />
+              {settings.tiktokEmail && (
+                <Chip label={settings.tiktokEmail} variant="outlined" />
+              )}
+            </Box>
+
+            <Paper variant="outlined" sx={{ p: 2, background: 'rgba(255,255,255,0.03)' }}>
+              <Typography variant="body2" sx={{ mb: 1, opacity: 0.8 }}>
+                La conexión al LIVE se realiza automáticamente al abrir el juego Ruleta usando tu usuario de TikTok.
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                <Chip size="small" label="Paso 1: Guarda tu usuario" />
+                <Chip size="small" label="Paso 2: Abre Ruleta" />
+                <Chip size="small" label="Paso 3: Inicia tu LIVE" />
+              </Box>
+            </Paper>
+          </Box>
         </DialogContent>
         <DialogActions sx={{ p: 3, gap: 2 }}>
           <Button 
@@ -657,6 +707,14 @@ const Dashboard = () => {
             }}
           >
             {loading ? 'Guardando...' : 'Guardar'}
+          </Button>
+          <Button 
+            onClick={() => navigate('/games/ruleta')}
+            variant="contained"
+            color="success"
+            sx={{ borderRadius: 2, fontWeight: 'bold' }}
+          >
+            Ir a Ruleta y Conectar
           </Button>
         </DialogActions>
       </Dialog>

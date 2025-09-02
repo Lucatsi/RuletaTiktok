@@ -75,6 +75,7 @@ const migrate = async () => {
   await client.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS password VARCHAR(255)");
   await client.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS username VARCHAR(100)");
     await client.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS tiktok_username VARCHAR(100)");
+  await client.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS tiktok_email VARCHAR(255)");
     await client.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS game_settings JSONB");
     await client.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP");
     await client.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP");

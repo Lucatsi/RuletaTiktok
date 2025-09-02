@@ -11,6 +11,14 @@ const authMiddleware = (req, res, next) => {
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    
+    // Asignar el objeto user completo para las rutas
+    req.user = {
+      id: decoded.userId,
+      email: decoded.email
+    };
+    
+    // Mantener compatibilidad con código existente
     req.userId = decoded.userId;
     req.userEmail = decoded.email;
     

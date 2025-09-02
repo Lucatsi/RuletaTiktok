@@ -38,7 +38,7 @@ class User {
   // Buscar usuario por ID
   static async findById(id) {
     const query = `
-      SELECT id, email, username, tiktok_username, created_at, updated_at
+  SELECT id, email, username, tiktok_username, tiktok_email, created_at, updated_at
       FROM users WHERE id = $1
     `;
     const result = await pool.query(query, [id]);
@@ -48,10 +48,10 @@ class User {
   // Actualizar configuraciones del usuario
   static async updateSettings(userId, settings) {
     const query = `
-      UPDATE users 
-      SET tiktok_username = $1, game_settings = $2, updated_at = NOW()
-      WHERE id = $3
-      RETURNING id, email, username, tiktok_username, game_settings
+  UPDATE users 
+  SET tiktok_username = $1, tiktok_email = $2, game_settings = $3, updated_at = NOW()
+  WHERE id = $4
+  RETURNING id, email, username, tiktok_username, tiktok_email, game_settings
     `;
     
     let settingsValue = null;
@@ -69,6 +69,7 @@ class User {
 
     const result = await pool.query(query, [
       settings.tiktokUsername || null,
+      settings.tiktokEmail || null,
       settingsValue,
       userId
     ]);

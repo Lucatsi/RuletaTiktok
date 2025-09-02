@@ -10,6 +10,7 @@ require('dotenv').config();
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
 const gamesRoutes = require('./routes/games');
+const rouletteRoutes = require('./routes/roulette');
 const TikTokService = require('./services/tiktokService');
 
 const app = express();
@@ -45,6 +46,7 @@ app.use(express.json());
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/games', gamesRoutes);
+app.use('/api/roulette', rouletteRoutes);
 
 // Instancia del servicio de TikTok
 const tiktokService = new TikTokService(io);

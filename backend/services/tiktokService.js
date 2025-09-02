@@ -15,33 +15,61 @@ class TikTokService {
         this.disconnectFromLive(userId);
       }
 
-      console.log(`🔄 Conectando al live de @${tiktokUsername} para usuario ${userId}`);
+      // Sanear username: quitar @, espacios y usar uniqueId en minúsculas
+      const uniqueId = (tiktokUsername || '')
+        .toString()
+        .trim()
+        .replace(/^@+/, '')
+        .toLowerCase();
 
-      const tiktokLiveConnection = new WebcastPushConnection(tiktokUsername);
+      console.log(`🔄 Conectando al live de @${uniqueId} para usuario ${userId}`);
+
+      const tiktokLiveConnection = new WebcastPushConnection(uniqueId, {
+        clientParams: {
+          app_language: 'es-ES',
+          device_platform: 'web',
+          region: 'ES'
+        },
+        enableWebsocketUpgrade: true,
+        fetchRoomInfoOnConnect: true
+      });
 
       // Eventos de TikTok Live
       tiktokLiveConnection.connect().then(state => {
-        console.log(`✅ Conectado al live de @${tiktokUsername}:`, state);
-        
+        console.log(`✅ Conectado al live de @${uniqueId}:`, state);
+        // Intentar obtener viewers iniciales de roomInfo
+        const initialViewers = (
+          state?.roomInfo?.viewer_count ||
+          state?.roomInfo?.viewerCount ||
+          state?.roomInfo?.user_count ||
+          state?.roomInfo?.data?.userCount ||
+          state?.data?.userCount ||
+          0
+        );
+
         this.io.to(`game-${userId}`).emit('tiktok-connected', {
           connected: true,
-          username: tiktokUsername,
-          status: state
+          username: uniqueId,
+          status: state,
+          viewerCount: initialViewers
         });
       }).catch(err => {
         console.error('❌ Error conectando al live:', err);
         this.io.to(`game-${userId}`).emit('tiktok-error', {
-          error: 'No se pudo conectar al live. Verifica que esté en vivo.'
+          error: 'No se pudo conectar al live. Verifica que estás EN VIVO, que el nombre es correcto y visible en tu región.',
+          code: err?.exception?.message || err?.info || 'connect_error'
         });
       });
 
       // Evento: regalo recibido
-      tiktokLiveConnection.on('gift', (data) => {
+    tiktokLiveConnection.on('gift', (data) => {
         console.log(`🎁 Regalo: ${data.giftName} x${data.repeatCount} de @${data.uniqueId}`);
         
         const giftData = {
           type: 'gift',
-          donorName: data.uniqueId,
+      donorName: data.uniqueId,
+      displayName: data.nickname,
+      username: data.uniqueId,
           giftName: data.giftName,
           giftId: data.giftId,
           giftCount: data.repeatCount,
@@ -57,53 +85,67 @@ class TikTokService {
       });
 
       // Evento: comentario
-      tiktokLiveConnection.on('chat', (data) => {
+    tiktokLiveConnection.on('chat', (data) => {
         console.log(`💬 ${data.uniqueId}: ${data.comment}`);
         
         this.io.to(`game-${userId}`).emit('tiktok-chat', {
           type: 'chat',
-          username: data.uniqueId,
+      username: data.uniqueId,
+      displayName: data.nickname,
           message: data.comment,
           timestamp: Date.now()
         });
       });
 
+      // Evento: viewers (conteo en tiempo real)
+      tiktokLiveConnection.on('roomUser', (data) => {
+        const vc = Number(data?.viewerCount ?? 0);
+        this.io.to(`game-${userId}`).emit('tiktok-viewers', {
+          type: 'viewers',
+          viewerCount: vc,
+          timestamp: Date.now()
+        });
+      });
+
       // Evento: seguidor nuevo
-      tiktokLiveConnection.on('follow', (data) => {
+    tiktokLiveConnection.on('follow', (data) => {
         console.log(`👤 Nuevo seguidor: @${data.uniqueId}`);
         
         this.io.to(`game-${userId}`).emit('tiktok-follow', {
           type: 'follow',
-          username: data.uniqueId,
+      username: data.uniqueId,
+      displayName: data.nickname,
           timestamp: Date.now()
         });
       });
 
       // Evento: like
-      tiktokLiveConnection.on('like', (data) => {
+    tiktokLiveConnection.on('like', (data) => {
         this.io.to(`game-${userId}`).emit('tiktok-like', {
           type: 'like',
-          username: data.uniqueId,
-          likeCount: data.likeCount,
-          totalLikeCount: data.totalLikeCount,
+      username: data.uniqueId,
+      displayName: data.nickname,
+      likeCount: data.likeCount,
+      totalLikeCount: data.totalLikeCount,
           timestamp: Date.now()
         });
       });
 
       // Evento: share
-      tiktokLiveConnection.on('share', (data) => {
+    tiktokLiveConnection.on('share', (data) => {
         console.log(`📤 Share de @${data.uniqueId}`);
         
         this.io.to(`game-${userId}`).emit('tiktok-share', {
           type: 'share',
-          username: data.uniqueId,
+      username: data.uniqueId,
+      displayName: data.nickname,
           timestamp: Date.now()
         });
       });
 
       // Evento: desconexión
       tiktokLiveConnection.on('disconnected', () => {
-        console.log(`🔌 Desconectado del live de @${tiktokUsername}`);
+        console.log(`🔌 Desconectado del live de @${uniqueId}`);
         this.connections.delete(userId);
         
         this.io.to(`game-${userId}`).emit('tiktok-disconnected', {
@@ -117,7 +159,8 @@ class TikTokService {
         console.error(`❌ Error en conexión TikTok:`, err);
         
         this.io.to(`game-${userId}`).emit('tiktok-error', {
-          error: err.message
+          error: err.message,
+          code: err?.exception?.message || err?.info || 'error'
         });
       });
 

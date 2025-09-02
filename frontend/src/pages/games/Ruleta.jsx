@@ -1,104 +1,340 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import TikTokNotification from '../../components/TikTokNotification';
+import socketService from '../../services/socketService';
+import rouletteService from '../../services/rouletteService';
+import { useAuth } from '../../contexts/AuthContext.jsx';
 
-// Opciones de la ruleta con mejores premios (exactamente como en la imagen)
-const ROULETTE_OPTIONS = [
-  { label: '� FUEGO', color: '#ff6b6b', textColor: '#ffffff', probability: 0.15, rarity: 'common' },
-  { label: '💎 DIAMANTE', color: '#ff9ff3', textColor: '#ffffff', probability: 0.05, rarity: 'legendary' },
-  { label: '⭐ ESTRELLA', color: '#48dbfb', textColor: '#ffffff', probability: 0.12, rarity: 'rare' },
-  { label: '🎁 REGALO', color: '#ff6348', textColor: '#ffffff', probability: 0.15, rarity: 'uncommon' },
-  { label: '🎵 MÚSICA', color: '#5f27cd', textColor: '#ffffff', probability: 0.15, rarity: 'common' },
-  { label: '� BONUS', color: '#00d2d3', textColor: '#ffffff', probability: 0.15, rarity: 'uncommon' },
-  { label: '� TEATRO', color: '#54a0ff', textColor: '#ffffff', probability: 0.15, rarity: 'common' },
-  { label: '🏆 TROFEO', color: '#feca57', textColor: '#ffffff', probability: 0.08, rarity: 'epic' }
-];
+function Ruleta() {
+  const { user } = useAuth();
 
-// Utilidad simple para asignar un emoji a un regalo
-const giftEmoji = (giftName = '') => {
-  const map = {
-    Rosa: '🌹', León: '🦁', Diamante: '💎', Corona: '👑', Guitarra: '🎸', Cohete: '🚀', Corazón: '💖', Estrella: '⭐'
-  };
-  return map[giftName] || '🎁';
-};
-
-export default function Ruleta() {
+  // Estado principal
+  const [activeTab, setActiveTab] = useState('both');
+  const [donations, setDonations] = useState([]);
+  const [likeTotals, setLikeTotals] = useState({});
+  const [donorTotals, setDonorTotals] = useState({});
+  const lastLikeTotalRef = useRef({});
+  const [chatMessages, setChatMessages] = useState([]);
+  const seenMessagesRef = useRef(new Set());
+  const [notification, setNotification] = useState(null);
+  const [stats, setStats] = useState({ totalSpins: 0, totalGifts: 0, totalCoins: 0, viewers: 0, totalLikes: 0 });
+  const [isConnected, setIsConnected] = useState(false);
   const [isSpinning, setIsSpinning] = useState(false);
   const [rotation, setRotation] = useState(0);
   const [winner, setWinner] = useState(null);
-  const [showConfig, setShowConfig] = useState(false);
-  const [tempOptions, setTempOptions] = useState([...ROULETTE_OPTIONS]);
-  const [rouletteOptions, setRouletteOptions] = useState([...ROULETTE_OPTIONS]);
   const [showWinner, setShowWinner] = useState(false);
-  const [donations, setDonations] = useState([
-    { id: 1, user: 'streamer123', gift: 'Rosa', count: 5, coins: 250, avatar: '🌹', timestamp: Date.now() - 5000 },
-    { id: 2, user: 'gamer456', gift: 'Diamante', count: 1, coins: 500, avatar: '💎', timestamp: Date.now() - 15000 },
-    { id: 3, user: 'viewer789', gift: 'Corazón', count: 3, coins: 150, avatar: '💖', timestamp: Date.now() - 30000 }
-  ]);
-  const [stats, setStats] = useState({ totalSpins: 42, totalGifts: 156, totalCoins: 12450, viewers: 1234 });
-  const [isConnected, setIsConnected] = useState(true);
   const [particles, setParticles] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
-  const spinRoulette = () => {
-    if (isSpinning) return;
+  // Configuraciones y modal
+  const [showConfig, setShowConfig] = useState(false);
+  const [configurations, setConfigurations] = useState([]);
+  const defaultOptions = [
+    { label: 'Premio 1', color: '#ef4444', textColor: '#ffffff', emoji: '🎁', probability: 1, rarity: 'common' },
+    { label: 'Premio 2', color: '#f59e0b', textColor: '#ffffff', emoji: '⭐', probability: 1, rarity: 'common' },
+    { label: 'Premio 3', color: '#10b981', textColor: '#ffffff', emoji: '🎊', probability: 1, rarity: 'common' },
+    { label: 'Premio 4', color: '#3b82f6', textColor: '#ffffff', emoji: '🎉', probability: 1, rarity: 'common' },
+    { label: 'Premio 5', color: '#8b5cf6', textColor: '#ffffff', emoji: '💎', probability: 1, rarity: 'common' },
+    { label: 'Premio 6', color: '#ec4899', textColor: '#ffffff', emoji: '🔥', probability: 1, rarity: 'common' },
+    { label: 'Premio 7', color: '#22c55e', textColor: '#ffffff', emoji: '🎯', probability: 1, rarity: 'common' },
+    { label: 'Premio 8', color: '#06b6d4', textColor: '#ffffff', emoji: '⚡', probability: 1, rarity: 'common' },
+  ];
+  const [rouletteOptions, setRouletteOptions] = useState(defaultOptions);
+  const [tempOptions, setTempOptions] = useState(defaultOptions);
+  const [currentConfigId, setCurrentConfigId] = useState(null);
+  const [spinHistory, setSpinHistory] = useState([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [sessionId, setSessionId] = useState(null);
+
+  // Utils
+  const parseOptions = (opt) => {
+    try {
+      const arr = Array.isArray(opt) ? opt : (typeof opt === 'string' ? JSON.parse(opt) : []);
+      return arr.map(o => ({
+        label: o.label || 'Premio',
+        color: o.color || '#8b5cf6',
+        textColor: o.textColor || '#ffffff',
+        emoji: o.emoji || '🎁',
+        probability: typeof o.probability === 'number' ? o.probability : 1,
+        rarity: o.rarity || 'common'
+      }));
+    } catch {
+      return defaultOptions;
+    }
+  };
+
+  const chooseWeighted = (options) => {
+    const weights = options.map(o => (typeof o.probability === 'number' && o.probability > 0 ? o.probability : 1));
+    const total = weights.reduce((a, b) => a + b, 0);
+    let r = Math.random() * total;
+    for (let i = 0; i < options.length; i++) {
+      if (r < weights[i]) return options[i];
+      r -= weights[i];
+    }
+    return options[options.length - 1];
+  };
+
+  // Preferir nombre real/visible
+  const getDisplayName = (payload) => {
+    return (
+      payload?.displayName ||
+      payload?.nickname ||
+      payload?.username ||
+      payload?.user ||
+      payload?.uniqueId ||
+      'usuario'
+    );
+  };
+
+  // Cargar configuraciones al inicio
+  const loadConfigurations = async () => {
+    try {
+      setLoading(true);
+      const configs = await rouletteService.getConfigurations();
+      setConfigurations(configs || []);
+      if ((configs || []).length > 0) {
+        const cfg = configs.find(c => c.is_default) || configs[0];
+        setCurrentConfigId(cfg.id);
+        const parsed = parseOptions(cfg.options);
+        setRouletteOptions(parsed);
+        setTempOptions(parsed);
+      }
+    } catch (e) {
+      console.error('Error al cargar configuraciones:', e);
+      setError(e.message || 'Error de configuraciones');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    // ID de sesión simple local si no viene del backend
+    setSessionId(`session-${Date.now()}`);
+    loadConfigurations();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Socket: unión y listeners
+  useEffect(() => {
+    if (!user) return;
+
+    socketService.connect();
+    const tiktokUsername = user.tiktokUsername || user.tiktok_username || null;
+    socketService.joinGame('roulette', user.id, tiktokUsername);
+
+    const onConnected = (payload) => {
+      setIsConnected(true);
+      let v = null;
+      if (payload && (payload.viewers ?? payload.viewerCount) != null) {
+        v = payload.viewers ?? payload.viewerCount;
+      } else if (payload?.status?.roomInfo) {
+        const ri = payload.status.roomInfo;
+        v = ri.viewer_count ?? ri.viewerCount ?? ri.user_count ?? ri?.data?.userCount ?? payload?.status?.data?.userCount ?? null;
+      }
+      if (v != null) {
+        setStats(prev => ({ ...prev, viewers: Number(v) || 0 }));
+      }
+    };
+      const onDisconnected = () => {
+        setIsConnected(false);
+      };
+      const onViewers = (payload) => {
+        const v = Number(payload?.viewerCount ?? payload?.viewers ?? 0) || 0;
+        setStats(prev => ({ ...prev, viewers: v }));
+      };
+    const onChat = (msg) => {
+      const id = msg?.id || `${msg?.user || msg?.username || msg?.uniqueId}-${msg?.message || msg?.comment}-${Math.floor(Date.now()/2000)}`;
+      if (seenMessagesRef.current.has(id)) return;
+      seenMessagesRef.current.add(id);
+      if (seenMessagesRef.current.size > 400) {
+        // limpiar claves antiguas para evitar crecimiento infinito
+        seenMessagesRef.current = new Set(Array.from(seenMessagesRef.current).slice(-300));
+      }
+      const item = {
+        id,
+        user: getDisplayName(msg),
+        message: msg?.message || msg?.comment || '',
+        timestamp: Date.now()
+      };
+      setChatMessages(prev => [item, ...prev].slice(0, 150));
+    };
+    const onLike = (ev) => {
+      const u = getDisplayName(ev);
+      // Requisito: sumar 1 por evento de like (no 3)
+      const incUser = 1;
+      setLikeTotals(prev => {
+        const next = { ...prev, [u]: (prev[u] || 0) + incUser };
+        lastLikeTotalRef.current = next;
+        return next;
+      });
+      // Mostrar el total de likes del live (si viene de TikTok)
+      if (ev?.totalLikeCount != null) {
+        setStats(prev => ({ ...prev, totalLikes: Number(ev.totalLikeCount) || 0 }));
+      }
+    };
+    const onGift = (gift) => {
+      const count = Number(gift?.giftCount ?? gift?.count ?? gift?.repeatCount ?? 1);
+      const coins = Number(gift?.coinsValue ?? gift?.coins ?? gift?.diamondCount ?? 0);
+      const name = getDisplayName(gift);
+      const donation = {
+        id: gift?.id || `${Date.now()}-${Math.random()}`,
+        user: name,
+        avatar: '🎁',
+        count,
+        gift: gift?.giftName ?? gift?.gift ?? 'Gift',
+        coins,
+        lifeAdded: Math.max(0, Math.floor(coins / 5)),
+        type: 'gift',
+        timestamp: Date.now()
+      };
+      setDonations(prev => [donation, ...prev].slice(0, 200));
+      if (coins > 0) {
+        setDonorTotals(prev => ({ ...prev, [name]: (prev[name] || 0) + coins }));
+      }
+      setStats(prev => ({ ...prev, totalGifts: prev.totalGifts + 1, totalCoins: prev.totalCoins + (coins || 0) }));
+      setNotification({ title: `Gracias @${donation.user}!`, message: `x${donation.count} ${donation.gift}`, coins: donation.coins, emoji: '🎁' });
+      // Auto-giro por donación
+      spinRoulette(true, donation.id);
+    };
+
+    socketService.onTikTokConnected(onConnected);
+    socketService.onTikTokDisconnected(onDisconnected);
+    socketService.onTikTokChat(onChat);
+  socketService.onTikTokLike(onLike);
+  socketService.onTikTokViewers(onViewers);
+    socketService.onTikTokGift(onGift);
+
+    return () => {
+      socketService.removeAllEventListeners('tiktok-connected');
+      socketService.removeAllEventListeners('tiktok-disconnected');
+      socketService.removeAllEventListeners('tiktok-chat');
+      socketService.removeAllEventListeners('tiktok-like');
+    socketService.removeAllEventListeners('tiktok-gift');
+    socketService.removeAllEventListeners('tiktok-viewers');
+    };
+  }, [user]);
+
+  const handleManualReconnect = () => {
+    if (!user) return;
+    const tiktokUsername = user.tiktokUsername || user.tiktok_username || null;
+    socketService.joinGame('roulette', user.id, tiktokUsername);
+  };
+
+  // Lógica de la ruleta
+  const spinRoulette = async (triggeredByDonation = false, donationId = null) => {
+    if (isSpinning || rouletteOptions.length === 0) return;
+    const selectedOption = chooseWeighted(rouletteOptions);
+    const anglePer = 360 / rouletteOptions.length;
+    const index = rouletteOptions.indexOf(selectedOption);
+    const targetAngle = 360 - (index * anglePer + anglePer / 2);
+    const extraSpins = 5 + Math.floor(Math.random() * 3);
+    const totalRotation = rotation + extraSpins * 360 + targetAngle;
+    const start = Date.now();
+
     setIsSpinning(true);
-    setWinner(null);
-
-    // Calcular rotación aleatoria (múltiples vueltas + ángulo final)
-    const spins = 5 + Math.random() * 5; // Entre 5 y 10 vueltas
-    const finalAngle = Math.random() * 360; // Ángulo final aleatorio
-    const totalRotation = rotation + (spins * 360) + finalAngle;
-    
     setRotation(totalRotation);
 
-    // Stats
-    setStats((p) => ({ ...p, totalSpins: p.totalSpins + 1 }));
-
-    // Partículas decorativas
-    createParticles();
-
-    setTimeout(() => {
-      // Calcular en qué posición se detuvo la ruleta
-      const normalizedRotation = totalRotation % 360;
-      const optionAngle = 360 / rouletteOptions.length;
-      
-      // La flecha apunta hacia arriba (0°), calculamos desde esa posición
-      // Como la ruleta gira en sentido horario, invertimos el cálculo
-      let adjustedRotation = (360 - normalizedRotation) % 360;
-      
-      // Ajustar por el punto de inicio de cada segmento (centro del segmento)
-      adjustedRotation = (adjustedRotation + (optionAngle / 2)) % 360;
-      
-      const selectedIndex = Math.floor(adjustedRotation / optionAngle);
-      
-      // Asegurar que el índice esté dentro del rango
-      const winnerIndex = selectedIndex >= rouletteOptions.length ? 0 : selectedIndex;
-      const selectedOption = rouletteOptions[winnerIndex];
-
-      console.log('Rotación total:', totalRotation);
-      console.log('Rotación normalizada:', normalizedRotation);
-      console.log('Rotación ajustada:', adjustedRotation);
-      console.log('Índice seleccionado:', winnerIndex);
-      console.log('Elemento ganador:', selectedOption.label);
-
+    setTimeout(async () => {
+      setIsSpinning(false);
       setWinner(selectedOption);
       setShowWinner(true);
-      setIsSpinning(false);
-      
-      // Ocultar ganador después de 5 segundos
+      const duration = Math.max(1, Math.round((Date.now() - start) / 1000));
+      setStats(prev => ({ ...prev, totalSpins: prev.totalSpins + 1 }));
+
+      try {
+        if (currentConfigId && sessionId) {
+          const newSpinNumber = (spinHistory?.[0]?.spin_number || 0) + 1;
+          await rouletteService.recordSpin(
+            currentConfigId,
+            sessionId,
+            selectedOption,
+            newSpinNumber,
+            totalRotation,
+            duration,
+            triggeredByDonation,
+            donationId,
+            stats.viewers
+          );
+
+          if (activeTab === 'history') {
+            setSpinHistory(prev => ([{
+              id: Date.now(),
+              winner_option: JSON.stringify(selectedOption),
+              spin_number: newSpinNumber,
+              rotation_degrees: totalRotation,
+              duration_seconds: duration,
+              triggered_by_donation: !!triggeredByDonation,
+              viewer_count: stats.viewers,
+              created_at: new Date().toISOString(),
+              roulette_name: 'Ruleta Épica'
+            }, ...(prev || [])]));
+          }
+        }
+      } catch (e) {
+        console.error('Error al registrar el giro:', e);
+      }
+
+      // Ocultar ganador luego de 5s
       setTimeout(() => {
         setShowWinner(false);
-        setTimeout(() => setWinner(null), 500); // Esperar a que termine la animación
+        setTimeout(() => setWinner(null), 500);
       }, 5000);
     }, 4000);
   };
 
-  // Función para resetear estadísticas
-  const resetStats = () => {
-    setStats({ totalSpins: 0, totalGifts: 0, totalCoins: 0, viewers: 0 });
-    setRotation(0);
-    setWinner(null);
-    setShowWinner(false);
-    setDonations([]);
-    setParticles([]);
+  // Acciones de historial/estadísticas
+  const loadSpinHistory = async () => {
+    if (!sessionId) return;
+    try {
+      setLoading(true);
+      const data = await rouletteService.getSpinHistory(sessionId, 50, 0);
+      setSpinHistory(data || []);
+    } catch (e) {
+      console.error('Error al cargar historial:', e);
+      setError(e.message || 'Error al cargar historial');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const resetStats = async () => {
+    try {
+      setLoading(true);
+      if (currentConfigId && sessionId) {
+        await rouletteService.resetRouletteStats(sessionId, currentConfigId);
+      }
+      setStats(prev => ({ ...prev, totalSpins: 0, totalGifts: 0, totalCoins: 0 }));
+      setRotation(0);
+      setWinner(null);
+      setShowWinner(false);
+      setDonations([]);
+      setLikeTotals({});
+      lastLikeTotalRef.current = {};
+      setParticles([]);
+      setSpinHistory([]);
+      alert('Estadísticas reseteadas');
+    } catch (e) {
+      console.error('Error al resetear estadísticas:', e);
+      alert('Error al resetear estadísticas: ' + (e.message || ''));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const deleteHistory = async () => {
+    if (!currentConfigId) return;
+    if (!confirm('¿Estás seguro de eliminar el historial de esta ruleta?')) return;
+    try {
+      setLoading(true);
+      await rouletteService.deleteRouletteHistory(currentConfigId);
+      setSpinHistory([]);
+      alert('Historial eliminado');
+    } catch (e) {
+      console.error('Error al eliminar historial:', e);
+      alert('Error al eliminar historial: ' + (e.message || ''));
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Funciones para manejar la configuración
@@ -109,11 +345,48 @@ export default function Ruleta() {
 
   const closeConfig = () => {
     setShowConfig(false);
+    setTempOptions([...rouletteOptions]);
   };
 
-  const saveConfig = () => {
-    setRouletteOptions([...tempOptions]);
-    setShowConfig(false);
+  const saveConfig = async () => {
+    try {
+      setLoading(true);
+      
+      if (currentConfigId) {
+        // Actualizar configuración existente
+        const currentConfig = configurations.find(c => c.id === currentConfigId);
+        if (currentConfig) {
+          await rouletteService.updateConfiguration(
+            currentConfigId,
+            currentConfig.name,
+            currentConfig.description,
+            tempOptions
+          );
+        }
+      } else {
+        // Crear nueva configuración
+        const newConfig = await rouletteService.createConfiguration(
+          'Nueva Ruleta',
+          'Configuración personalizada',
+          tempOptions
+        );
+        setCurrentConfigId(newConfig.id);
+        setConfigurations(prev => [...prev, newConfig]);
+      }
+      
+      setRouletteOptions([...tempOptions]);
+      setShowConfig(false);
+      
+      // Recargar configuraciones para mantener sincronizado
+      await loadConfigurations();
+      
+      alert('Configuración guardada exitosamente');
+    } catch (error) {
+      console.error('Error al guardar configuración:', error);
+      alert('Error al guardar configuración: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const addOption = () => {
@@ -122,7 +395,8 @@ export default function Ruleta() {
       color: '#' + Math.floor(Math.random()*16777215).toString(16),
       textColor: '#ffffff',
       emoji: '🎁',
-      probability: 1 / (tempOptions.length + 1)
+      probability: 1 / (tempOptions.length + 1),
+      rarity: 'common'
     };
     setTempOptions([...tempOptions, newOption]);
   };
@@ -138,6 +412,21 @@ export default function Ruleta() {
     const newOptions = [...tempOptions];
     newOptions[index][field] = value;
     setTempOptions(newOptions);
+  };
+
+  // Cambiar configuración activa
+  const changeConfiguration = async (configId) => {
+    try {
+      const config = configurations.find(c => c.id === configId);
+      if (config) {
+        setCurrentConfigId(configId);
+  const options = parseOptions(config.options);
+        setRouletteOptions(options);
+        setTempOptions(options);
+      }
+    } catch (error) {
+      console.error('Error al cambiar configuración:', error);
+    }
   };
 
   const createParticles = () => {
@@ -158,6 +447,23 @@ export default function Ruleta() {
     return `${Math.floor(diff / 3600)}h`;
   };
 
+  // Config para likes (tap-tap): cuántos likes llenan la barra al 100%
+  const LIKE_BAR_TARGET = 100; // ajustable
+  const getDonationBar = (donation) => {
+    if (donation?.type === 'like') {
+      const pct = Math.min(((Number(donation.count) || 0) / LIKE_BAR_TARGET) * 100, 100);
+      return {
+        percent: pct,
+        gradient: 'linear-gradient(45deg, #22c55e, #16a34a, #059669)'
+      };
+    }
+    const pct = Math.min(((Number(donation.coins) || 0) / 500) * 100, 100);
+    return {
+      percent: pct,
+      gradient: 'linear-gradient(45deg, #fbbf24, #f59e0b, #ef4444)'
+    };
+  };
+
   return (
     <div style={{
       minHeight: '100vh',
@@ -166,6 +472,11 @@ export default function Ruleta() {
       position: 'relative',
       fontFamily: 'Arial, sans-serif'
     }}>
+      {/* Notificación de TikTok (agradecimiento donación) */}
+      <TikTokNotification
+        notification={notification}
+        onClose={() => setNotification(null)}
+      />
       {/* Fondo animado */}
       <div style={{ position: 'absolute', inset: 0, opacity: 0.1 }}>
         <div style={{
@@ -221,7 +532,52 @@ export default function Ruleta() {
         </div>
       ))}
 
-      <div style={{ display: 'flex', minHeight: '100vh' }}>
+  <div style={{ display: 'flex', height: '100vh' }}>
+        {/* Columna izquierda: Chat en vivo */}
+        <div style={{
+          width: '380px',
+          background: 'linear-gradient(to bottom, rgba(0, 0, 0, 0.4), rgba(59, 130, 246, 0.2), rgba(0, 0, 0, 0.4))',
+          backdropFilter: 'blur(20px)',
+          borderRight: '1px solid rgba(59, 130, 246, 0.35)',
+          display: 'flex',
+          flexDirection: 'column',
+      boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+      height: '100vh',
+      maxHeight: '100vh',
+      overflow: 'hidden'
+        }}>
+          <div style={{
+            padding: '16px',
+            borderBottom: '1px solid rgba(59, 130, 246, 0.35)',
+            background: 'linear-gradient(45deg, rgba(59, 130, 246, 0.25), rgba(147, 51, 234, 0.15))'
+          }}>
+            <h3 style={{ color: 'white', margin: 0, fontWeight: 'bold' }}>💬 Chat en Vivo</h3>
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            {chatMessages.length === 0 ? (
+              <div style={{ textAlign: 'center', color: '#9ca3af', padding: '20px', fontSize: '0.875rem' }}>📭 Aún no hay mensajes</div>
+            ) : (
+              chatMessages.slice(0, 150).map(msg => (
+                <div key={msg.id} style={{ padding: '10px 14px', borderBottom: '1px solid rgba(59, 130, 246, 0.15)' }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                    <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '0.8rem' }}>
+                      {msg.user?.charAt(0)?.toUpperCase() || 'U'}
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ color: 'white', fontWeight: 600, fontSize: '0.85rem' }}>@{msg.user}</span>
+                        <span style={{ color: '#c4b5fd', fontSize: '0.7rem' }}>{formatTime(msg.timestamp)}</span>
+                      </div>
+                      <div style={{ marginTop: '6px', background: 'rgba(59, 130, 246, 0.15)', border: '1px solid rgba(59, 130, 246, 0.35)', padding: '8px 10px', borderRadius: '10px', color: '#e5e7eb', fontSize: '0.9rem' }}>
+                        {msg.message}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
         {/* Panel principal de la ruleta */}
         <div style={{
           flex: 1,
@@ -272,6 +628,33 @@ export default function Ruleta() {
               }}>
                 👥 {stats.viewers.toLocaleString()} viewers
               </div>
+              <div style={{
+                color: 'white',
+                background: 'rgba(0, 0, 0, 0.3)',
+                padding: '8px 16px',
+                borderRadius: '9999px',
+                backdropFilter: 'blur(8px)'
+              }}>
+                👍 {stats.totalLikes.toLocaleString()} likes
+              </div>
+              {!isConnected && (user?.tiktokUsername || user?.tiktok_username) && (
+                <button
+                  onClick={handleManualReconnect}
+                  style={{
+                    background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
+                    border: 'none',
+                    borderRadius: '9999px',
+                    padding: '8px 14px',
+                    color: 'white',
+                    fontWeight: 'bold',
+                    cursor: 'pointer',
+                    fontSize: '0.8rem',
+                    boxShadow: '0 4px 15px rgba(139, 92, 246, 0.3)'
+                  }}
+                >
+                  🔁 Reconectar TikTok
+                </button>
+              )}
             </div>
             <div style={{
               color: 'white',
@@ -644,11 +1027,14 @@ export default function Ruleta() {
             transform: 'translateX(50%)',
             display: 'flex',
             gap: '12px',
-            zIndex: 25
+            zIndex: 25,
+            flexWrap: 'wrap',
+            justifyContent: 'center'
           }}>
             {/* Botón de configuración */}
             <button
               onClick={openConfig}
+              disabled={loading}
               style={{
                 background: 'linear-gradient(135deg, #10b981, #059669)',
                 border: 'none',
@@ -656,13 +1042,11 @@ export default function Ruleta() {
                 padding: '12px 16px',
                 color: 'white',
                 fontWeight: 'bold',
-                cursor: 'pointer',
+                cursor: loading ? 'not-allowed' : 'pointer',
                 fontSize: '0.875rem',
                 boxShadow: '0 4px 15px rgba(16, 185, 129, 0.3)',
                 transition: 'all 0.3s ease',
-                ':hover': {
-                  transform: 'scale(1.05)'
-                }
+                opacity: loading ? 0.6 : 1
               }}
             >
               ⚙️ CONFIGURAR
@@ -671,6 +1055,7 @@ export default function Ruleta() {
             {/* Botón de reseteo */}
             <button
               onClick={resetStats}
+              disabled={loading}
               style={{
                 background: 'linear-gradient(135deg, #ef4444, #dc2626)',
                 border: 'none',
@@ -678,16 +1063,59 @@ export default function Ruleta() {
                 padding: '12px 16px',
                 color: 'white',
                 fontWeight: 'bold',
-                cursor: 'pointer',
+                cursor: loading ? 'not-allowed' : 'pointer',
                 fontSize: '0.875rem',
                 boxShadow: '0 4px 15px rgba(239, 68, 68, 0.3)',
                 transition: 'all 0.3s ease',
-                ':hover': {
-                  transform: 'scale(1.05)'
-                }
+                opacity: loading ? 0.6 : 1
               }}
             >
               🔄 RESETEAR
+            </button>
+
+            {/* Botón de historial */}
+            <button
+              onClick={() => {
+                setShowHistory(!showHistory);
+                if (!showHistory) loadSpinHistory();
+              }}
+              disabled={loading}
+              style={{
+                background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
+                border: 'none',
+                borderRadius: '12px',
+                padding: '12px 16px',
+                color: 'white',
+                fontWeight: 'bold',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                fontSize: '0.875rem',
+                boxShadow: '0 4px 15px rgba(139, 92, 246, 0.3)',
+                transition: 'all 0.3s ease',
+                opacity: loading ? 0.6 : 1
+              }}
+            >
+              📊 HISTORIAL
+            </button>
+
+            {/* Botón para eliminar historial */}
+            <button
+              onClick={deleteHistory}
+              disabled={loading || !currentConfigId}
+              style={{
+                background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                border: 'none',
+                borderRadius: '12px',
+                padding: '12px 16px',
+                color: 'white',
+                fontWeight: 'bold',
+                cursor: (loading || !currentConfigId) ? 'not-allowed' : 'pointer',
+                fontSize: '0.875rem',
+                boxShadow: '0 4px 15px rgba(245, 158, 11, 0.3)',
+                transition: 'all 0.3s ease',
+                opacity: (loading || !currentConfigId) ? 0.6 : 1
+              }}
+            >
+              �️ BORRAR
             </button>
           </div>
 
@@ -729,152 +1157,484 @@ export default function Ruleta() {
           </div>
         </div>
 
-        {/* Panel lateral de donaciones */}
+  {/* Panel lateral derecho con pestañas (sin Chat) */}
         <div style={{
-          width: '320px',
+          width: '380px',
           background: 'linear-gradient(to bottom, rgba(0, 0, 0, 0.4), rgba(147, 51, 234, 0.2), rgba(0, 0, 0, 0.4))',
           backdropFilter: 'blur(20px)',
           borderLeft: '1px solid rgba(147, 51, 234, 0.3)',
           display: 'flex',
           flexDirection: 'column',
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+          height: '100vh',
+          maxHeight: '100vh',
+          overflow: 'hidden'
         }}>
+          {/* Pestañas del panel */}
+          <div style={{
+            display: 'flex',
+            borderBottom: '1px solid rgba(147, 51, 234, 0.3)',
+            background: 'linear-gradient(45deg, rgba(147, 51, 234, 0.1), rgba(236, 72, 153, 0.1))'
+          }}>
+            <button
+              onClick={() => setActiveTab('donations')}
+              style={{
+                flex: 1,
+                padding: '16px 12px',
+                border: 'none',
+                background: activeTab === 'donations' 
+                  ? 'linear-gradient(45deg, rgba(147, 51, 234, 0.3), rgba(236, 72, 153, 0.3))'
+                  : 'transparent',
+                color: activeTab === 'donations' ? '#ffffff' : '#c4b5fd',
+                fontWeight: 'bold',
+                fontSize: '0.875rem',
+                cursor: 'pointer',
+                borderBottom: activeTab === 'donations' ? '2px solid #8b5cf6' : '2px solid transparent',
+                transition: 'all 0.3s ease'
+              }}
+            >
+              🎁 Donaciones
+            </button>
+            <button
+              onClick={() => setActiveTab('both')}
+              style={{
+                flex: 1,
+                padding: '16px 12px',
+                border: 'none',
+                background: activeTab === 'both' 
+                  ? 'linear-gradient(45deg, rgba(2, 132, 199, 0.35), rgba(59, 130, 246, 0.35))'
+                  : 'transparent',
+                color: activeTab === 'both' ? '#ffffff' : '#c4b5fd',
+                fontWeight: 'bold',
+                fontSize: '0.875rem',
+                cursor: 'pointer',
+                borderBottom: activeTab === 'both' ? '2px solid #60a5fa' : '2px solid transparent',
+                transition: 'all 0.3s ease'
+              }}
+            >
+              🧩 Ambos
+            </button>
+            {/* (Pestaña Chat eliminada) */}
+            <button
+              onClick={() => setActiveTab('likes')}
+              style={{
+                flex: 1,
+                padding: '16px 12px',
+                border: 'none',
+                background: activeTab === 'likes' 
+                  ? 'linear-gradient(45deg, rgba(34, 197, 94, 0.35), rgba(5, 150, 105, 0.35))'
+                  : 'transparent',
+                color: activeTab === 'likes' ? '#ffffff' : '#c4b5fd',
+                fontWeight: 'bold',
+                fontSize: '0.875rem',
+                cursor: 'pointer',
+                borderBottom: activeTab === 'likes' ? '2px solid #22c55e' : '2px solid transparent',
+                transition: 'all 0.3s ease'
+              }}
+            >
+              👍 Top Likes
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab('history');
+                if (spinHistory.length === 0) loadSpinHistory();
+              }}
+              style={{
+                flex: 1,
+                padding: '16px 12px',
+                border: 'none',
+                background: activeTab === 'history' 
+                  ? 'linear-gradient(45deg, rgba(147, 51, 234, 0.3), rgba(236, 72, 153, 0.3))'
+                  : 'transparent',
+                color: activeTab === 'history' ? '#ffffff' : '#c4b5fd',
+                fontWeight: 'bold',
+                fontSize: '0.875rem',
+                cursor: 'pointer',
+                borderBottom: activeTab === 'history' ? '2px solid #8b5cf6' : '2px solid transparent',
+                transition: 'all 0.3s ease'
+              }}
+            >
+              📊 Historial
+            </button>
+          </div>
+
           {/* Header del panel */}
           <div style={{
-            padding: '24px',
+            padding: '20px',
             borderBottom: '1px solid rgba(147, 51, 234, 0.3)',
             background: 'linear-gradient(45deg, rgba(147, 51, 234, 0.2), rgba(236, 72, 153, 0.2))'
           }}>
-            <h3 style={{
-              color: 'white',
-              fontSize: '1.25rem',
-              fontWeight: 'bold',
-              marginBottom: '8px'
-            }}>🎁 Donaciones en Vivo</h3>
-            <p style={{
-              color: '#c4b5fd',
-              fontSize: '0.875rem'
-            }}>Los regalos más recientes</p>
+            {activeTab === 'donations' ? (
+              <>
+                <h3 style={{
+                  color: 'white',
+                  fontSize: '1.25rem',
+                  fontWeight: 'bold',
+                  marginBottom: '8px'
+                }}>🎁 Donaciones en Vivo</h3>
+                <p style={{
+                  color: '#c4b5fd',
+                  fontSize: '0.875rem'
+                }}>Los regalos más recientes</p>
+              </>
+            ) : activeTab === 'both' ? (
+              <>
+                <h3 style={{
+                  color: 'white',
+                  fontSize: '1.25rem',
+                  fontWeight: 'bold',
+                  marginBottom: '8px'
+                }}>🧩 Donaciones y Top Likes</h3>
+                <p style={{
+                  color: '#c4b5fd',
+                  fontSize: '0.875rem'
+                }}>Vista combinada: donaciones a la izquierda, likes a la derecha · Total likes: {stats.totalLikes.toLocaleString()}</p>
+              </>
+            ) : activeTab === 'likes' ? (
+              <>
+                <h3 style={{
+                  color: 'white',
+                  fontSize: '1.25rem',
+                  fontWeight: 'bold',
+                  marginBottom: '8px'
+                }}>👍 Top Likes</h3>
+                <p style={{
+                  color: '#c4b5fd',
+                  fontSize: '0.875rem'
+                }}>1 por like · Total likes del live: {stats.totalLikes.toLocaleString()}</p>
+              </>
+            ) : activeTab === 'chat' ? (
+              <>
+                <h3 style={{
+                  color: 'white',
+                  fontSize: '1.25rem',
+                  fontWeight: 'bold',
+                  marginBottom: '8px'
+                }}>💬 Chat en Vivo</h3>
+                <p style={{
+                  color: '#c4b5fd',
+                  fontSize: '0.875rem'
+                }}>Mensajes más recientes</p>
+              </>
+            ) : (
+              <>
+                <h3 style={{
+                  color: 'white',
+                  fontSize: '1.25rem',
+                  fontWeight: 'bold',
+                  marginBottom: '8px'
+                }}>📊 Historial de Giros</h3>
+                <p style={{
+                  color: '#c4b5fd',
+                  fontSize: '0.875rem'
+                }}>Últimos giros registrados ({spinHistory.length})</p>
+              </>
+            )}
           </div>
           
-          {/* Lista de donaciones */}
-          <div style={{
-            flex: 1,
-            overflowY: 'auto'
-          }}>
-            {donations.map((donation, index) => (
-              <div
-                key={donation.id}
-                style={{
-                  padding: '16px',
-                  borderBottom: '1px solid rgba(147, 51, 234, 0.1)',
-                  transition: 'all 0.3s ease',
-                  cursor: 'pointer'
-                }}
-                onMouseEnter={(e) => {
-                  e.target.style.background = 'rgba(147, 51, 234, 0.1)';
-                  e.target.style.transform = 'scale(1.02)';
-                }}
-                onMouseLeave={(e) => {
-                  e.target.style.background = 'transparent';
-                  e.target.style.transform = 'scale(1)';
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <div style={{
-                    width: '48px',
-                    height: '48px',
-                    background: 'linear-gradient(135deg, #8b5cf6, #ec4899, #ef4444)',
-                    borderRadius: '50%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '1.25rem',
-                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
-                  }}>
-                    {donation.avatar}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <h4 style={{
-                        color: 'white',
-                        fontWeight: '600',
-                        fontSize: '0.875rem',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap'
-                      }}>
-                        @{donation.user}
-                      </h4>
-                      <span style={{
-                        color: '#c4b5fd',
-                        fontSize: '0.75rem'
-                      }}>
-                        {formatTime(donation.timestamp)}
-                      </span>
+          {/* Contenido del panel */}
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            {/* Vista combinada */}
+            {activeTab === 'both' && (
+              <div style={{ display: 'flex', height: '100%' }}>
+                {/* Donaciones (izquierda) */}
+                <div style={{ flex: 1, overflowY: 'auto', borderRight: '1px solid rgba(147, 51, 234, 0.2)' }}>
+                  {donations.filter(d => d.type !== 'like').map((donation) => (
+                    <div
+                      key={donation.id}
+                      style={{ padding: '16px', borderBottom: '1px solid rgba(147, 51, 234, 0.1)', transition: 'all 0.3s ease', cursor: 'pointer' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(147, 51, 234, 0.1)'; e.currentTarget.style.transform = 'scale(1.02)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.transform = 'scale(1)'; }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div style={{ width: '48px', height: '48px', background: 'linear-gradient(135deg, #8b5cf6, #ec4899, #ef4444)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.25rem' }}>
+                          {donation.avatar}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <h4 style={{ color: 'white', fontWeight: 600, fontSize: '0.875rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>@{donation.user}</h4>
+                            <span style={{ color: '#c4b5fd', fontSize: '0.75rem' }}>{formatTime(donation.timestamp)}</span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '4px' }}>
+                            <p style={{ color: '#e9d5ff', fontSize: '0.875rem' }}>
+                              {donation.type === 'like' ? `Likes x${donation.count}` : `${donation.count}x ${donation.gift}`}
+                            </p>
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                              {Number(donation.coins) > 0 && (<span style={{ color: '#fbbf24', fontWeight: 'bold', fontSize: '0.875rem' }}>{donation.coins}💰</span>)}
+                              {typeof donation.lifeAdded === 'number' && donation.lifeAdded > 0 && (<span style={{ color: '#4ade80', fontWeight: 'bold', fontSize: '0.875rem' }}>❤️ +{donation.lifeAdded}</span>)}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      {(() => { const bar = getDonationBar(donation); return (
+                        <div style={{ marginTop: '12px', height: '8px', background: 'rgba(88, 28, 135, 0.5)', borderRadius: '9999px', overflow: 'hidden' }}>
+                          <div style={{ height: '100%', background: bar.gradient, borderRadius: '9999px', width: `${bar.percent}%`, transition: 'width 0.8s ease-out' }} />
+                        </div>
+                      ); })()}
                     </div>
-                    <div style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      marginTop: '4px'
-                    }}>
-                      <p style={{
-                        color: '#e9d5ff',
-                        fontSize: '0.875rem'
-                      }}>
-                        {donation.count}x {donation.gift}
-                      </p>
-                      <span style={{
-                        color: '#fbbf24',
-                        fontWeight: 'bold',
-                        fontSize: '0.875rem'
-                      }}>
-                        {donation.coins}💰
-                      </span>
-                    </div>
-                  </div>
+                  ))}
                 </div>
-                {/* Barra de valor */}
-                <div style={{
-                  marginTop: '12px',
-                  height: '8px',
-                  background: 'rgba(88, 28, 135, 0.5)',
-                  borderRadius: '9999px',
-                  overflow: 'hidden'
-                }}>
-                  <div style={{
-                    height: '100%',
-                    background: 'linear-gradient(45deg, #fbbf24, #f59e0b, #ef4444)',
-                    borderRadius: '9999px',
-                    width: `${Math.min((donation.coins / 500) * 100, 100)}%`,
-                    transition: 'width 1s ease-out'
-                  }} />
+                {/* Top Likes (derecha) */}
+                <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+                  <div style={{ padding: '12px 16px', borderBottom: '1px solid rgba(147, 51, 234, 0.2)', background: 'rgba(16, 185, 129, 0.1)', position: 'sticky', top: 0 }}>
+                    <span style={{ color: 'white', fontWeight: 'bold' }}>👍 Top Likes · Total: {stats.totalLikes.toLocaleString()}</span>
+                  </div>
+                  <div>
+                    {(() => {
+                      const entries = Object.entries(likeTotals);
+                      if (entries.length === 0) return (<div style={{ textAlign: 'center', color: '#9ca3af', padding: '20px', fontSize: '0.875rem' }}>📭 Aún no hay likes</div>);
+                      const sorted = entries.map(([user, count]) => ({ user, count })).sort((a, b) => b.count - a.count).slice(0, 15);
+                      const top = sorted[0]?.count || 1;
+                      return sorted.map((row, i) => (
+                        <div key={row.user} style={{ padding: '12px 16px', borderBottom: '1px solid rgba(147, 51, 234, 0.1)' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'linear-gradient(135deg, #22c55e, #16a34a)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.9rem', fontWeight: 'bold' }}>{i + 1}</div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ color: 'white', fontWeight: 600, fontSize: '0.85rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>@{row.user}</span>
+                                <span style={{ color: '#4ade80', fontWeight: 'bold', fontSize: '0.85rem' }}>👍 {row.count}</span>
+                              </div>
+                              <div style={{ marginTop: '6px', height: '6px', background: 'rgba(16, 185, 129, 0.25)', borderRadius: '9999px', overflow: 'hidden' }}>
+                                <div style={{ width: `${Math.min((row.count / top) * 100, 100)}%`, height: '100%', background: 'linear-gradient(45deg, #22c55e, #16a34a, #059669)', borderRadius: '9999px', transition: 'width 0.6s ease' }} />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ));
+                    })()}
+                  </div>
                 </div>
               </div>
-            ))}
+            )}
+
+            {/* Vista Donaciones */}
+            {activeTab === 'donations' && (
+              donations.filter(d => d.type !== 'like').map((donation) => (
+                <div
+                  key={donation.id}
+                  style={{ padding: '16px', borderBottom: '1px solid rgba(147, 51, 234, 0.1)', transition: 'all 0.3s ease', cursor: 'pointer' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(147, 51, 234, 0.1)'; e.currentTarget.style.transform = 'scale(1.02)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.transform = 'scale(1)'; }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ width: '48px', height: '48px', background: 'linear-gradient(135deg, #8b5cf6, #ec4899, #ef4444)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.25rem', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}>
+                      {donation.avatar}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <h4 style={{ color: 'white', fontWeight: 600, fontSize: '0.875rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>@{donation.user}</h4>
+                        <span style={{ color: '#c4b5fd', fontSize: '0.75rem' }}>{formatTime(donation.timestamp)}</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '4px' }}>
+                        <p style={{ color: '#e9d5ff', fontSize: '0.875rem' }}>{donation.count}x {donation.gift}</p>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          {Number(donation.coins) > 0 && (<span style={{ color: '#fbbf24', fontWeight: 'bold', fontSize: '0.875rem' }}>{donation.coins}💰</span>)}
+                          {typeof donation.lifeAdded === 'number' && donation.lifeAdded > 0 && (<span style={{ color: '#4ade80', fontWeight: 'bold', fontSize: '0.875rem' }}>❤️ +{donation.lifeAdded}</span>)}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  {(() => { const bar = getDonationBar(donation); return (
+                    <div style={{ marginTop: '12px', height: '8px', background: 'rgba(88, 28, 135, 0.5)', borderRadius: '9999px', overflow: 'hidden' }}>
+                      <div style={{ height: '100%', background: bar.gradient, borderRadius: '9999px', width: `${bar.percent}%`, transition: 'width 0.8s ease-out' }} />
+                    </div>
+                  ); })()}
+                </div>
+              ))
+            )}
+
+            {/* Vista Chat */}
+            {/* (Pestaña Chat eliminada: el chat ahora está en la columna izquierda) */}
+
+            {/* Vista Likes */}
+            {activeTab === 'likes' && (
+              (() => {
+                const entries = Object.entries(likeTotals);
+                if (entries.length === 0) {
+                  return (
+                    <div style={{ textAlign: 'center', color: '#9ca3af', padding: '40px', fontSize: '0.875rem' }}>
+                      📭 Aún no hay likes
+                      <br />
+                      <span style={{ fontSize: '0.75rem', opacity: 0.7 }}>Cuando recibas likes, verás el ranking aquí</span>
+                    </div>
+                  );
+                }
+                const sorted = entries.map(([user, count]) => ({ user, count })).sort((a, b) => b.count - a.count).slice(0, 30);
+                const top = sorted[0]?.count || 1;
+                return sorted.map((row, i) => (
+                  <div key={row.user} style={{ padding: '12px 16px', borderBottom: '1px solid rgba(147, 51, 234, 0.1)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'linear-gradient(135deg, #22c55e, #16a34a)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', fontWeight: 'bold' }}>{i + 1}</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ color: 'white', fontWeight: 600, fontSize: '0.9rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>@{row.user}</span>
+                          <span style={{ color: '#4ade80', fontWeight: 'bold' }}>👍 {row.count}</span>
+                        </div>
+                        <div style={{ marginTop: '8px', height: '8px', background: 'rgba(16, 185, 129, 0.25)', borderRadius: '9999px', overflow: 'hidden' }}>
+                          <div style={{ width: `${Math.min((row.count / top) * 100, 100)}%`, height: '100%', background: 'linear-gradient(45deg, #22c55e, #16a34a, #059669)', borderRadius: '9999px', transition: 'width 0.6s ease' }} />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ));
+              })()
+            )}
+
+            {/* Vista Historial */}
+            {activeTab === 'history' && (
+              loading ? (
+                <div style={{ textAlign: 'center', color: 'white', padding: '40px', fontSize: '0.875rem' }}>🔄 Cargando historial...</div>
+              ) : spinHistory.length === 0 ? (
+                <div style={{ textAlign: 'center', color: '#9ca3af', padding: '40px', fontSize: '0.875rem' }}>
+                  📭 No hay giros registrados aún
+                  <br />
+                  <span style={{ fontSize: '0.75rem', opacity: 0.7 }}>¡Gira la ruleta para ver el historial!</span>
+                </div>
+              ) : (
+                spinHistory.slice(0, 20).map((spin) => (
+                  <div
+                    key={spin.id}
+                    style={{ padding: '12px 16px', borderBottom: '1px solid rgba(147, 51, 234, 0.1)', transition: 'all 0.3s ease' }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(147, 51, 234, 0.1)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <div style={{ width: '40px', height: '40px', background: 'linear-gradient(135deg, #8b5cf6, #ec4899)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.25rem', boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)' }}>
+                        {JSON.parse(spin.winner_option).emoji || '🎁'}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                          <span style={{ color: 'white', fontWeight: 'bold', fontSize: '0.875rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {JSON.parse(spin.winner_option).label}
+                          </span>
+                          <span style={{ color: '#c4b5fd', fontSize: '0.65rem', background: 'rgba(139, 92, 246, 0.2)', padding: '2px 6px', borderRadius: '4px' }}>#{spin.spin_number}</span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ color: '#9ca3af', fontSize: '0.75rem' }}>👥 {spin.viewer_count}</span>
+                            <span style={{ color: '#9ca3af', fontSize: '0.75rem' }}>⏱️ {spin.duration_seconds}s</span>
+                          </div>
+                          <span style={{ color: '#9ca3af', fontSize: '0.65rem' }}>
+                            {new Date(spin.created_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                        {spin.triggered_by_donation && (
+                          <div style={{ color: '#fbbf24', fontSize: '0.65rem', marginTop: '2px' }}>💰 Activado por donación</div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )
+            )}
           </div>
           
           {/* Footer del panel */}
           <div style={{
-            padding: '24px',
+            padding: '20px',
             borderTop: '1px solid rgba(147, 51, 234, 0.3)',
             background: 'linear-gradient(45deg, rgba(147, 51, 234, 0.2), rgba(236, 72, 153, 0.2))'
           }}>
-            <div style={{ textAlign: 'center' }}>
-              <p style={{
-                color: '#fbbf24',
-                fontSize: '2rem',
-                fontWeight: 'bold',
-                marginBottom: '4px'
-              }}>
-                💰 {stats.totalCoins.toLocaleString()}
-              </p>
-              <p style={{
-                color: '#c4b5fd',
-                fontSize: '0.875rem'
-              }}>Total de monedas hoy</p>
-            </div>
+            {activeTab === 'donations' ? (
+              /* Footer de donaciones */
+              <div style={{ textAlign: 'center' }}>
+                <p style={{
+                  color: '#fbbf24',
+                  fontSize: '2rem',
+                  fontWeight: 'bold',
+                  marginBottom: '4px'
+                }}>
+                  💰 {stats.totalCoins.toLocaleString()}
+                </p>
+                <p style={{
+                  color: '#c4b5fd',
+                  fontSize: '0.875rem'
+                }}>Total de monedas hoy</p>
+              </div>
+            ) : (
+              /* Footer de historial */
+              <div>
+                <div style={{ textAlign: 'center', marginBottom: '15px' }}>
+                  <p style={{
+                    color: '#8b5cf6',
+                    fontSize: '1.5rem',
+                    fontWeight: 'bold',
+                    marginBottom: '4px'
+                  }}>
+                    🎯 {stats.totalSpins}
+                  </p>
+                  <p style={{
+                    color: '#c4b5fd',
+                    fontSize: '0.875rem'
+                  }}>Giros totales</p>
+                </div>
+                
+                {/* Botones de acción del historial */}
+                <div style={{ 
+                  display: 'flex', 
+                  gap: '8px', 
+                  justifyContent: 'center',
+                  flexWrap: 'wrap'
+                }}>
+                  <button
+                    onClick={() => loadSpinHistory()}
+                    disabled={loading}
+                    style={{
+                      background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
+                      border: 'none',
+                      borderRadius: '8px',
+                      padding: '8px 12px',
+                      color: 'white',
+                      fontWeight: 'bold',
+                      cursor: loading ? 'not-allowed' : 'pointer',
+                      fontSize: '0.75rem',
+                      opacity: loading ? 0.6 : 1,
+                      transition: 'all 0.3s ease'
+                    }}
+                  >
+                    🔄 Actualizar
+                  </button>
+                  
+                  <button
+                    onClick={deleteHistory}
+                    disabled={loading || !currentConfigId || spinHistory.length === 0}
+                    style={{
+                      background: 'linear-gradient(135deg, #ef4444, #dc2626)',
+                      border: 'none',
+                      borderRadius: '8px',
+                      padding: '8px 12px',
+                      color: 'white',
+                      fontWeight: 'bold',
+                      cursor: (loading || !currentConfigId || spinHistory.length === 0) ? 'not-allowed' : 'pointer',
+                      fontSize: '0.75rem',
+                      opacity: (loading || !currentConfigId || spinHistory.length === 0) ? 0.6 : 1,
+                      transition: 'all 0.3s ease'
+                    }}
+                  >
+                    🗑️ Limpiar
+                  </button>
+                  
+                  <button
+                    onClick={() => setShowHistory(true)}
+                    disabled={loading}
+                    style={{
+                      background: 'linear-gradient(135deg, #10b981, #059669)',
+                      border: 'none',
+                      borderRadius: '8px',
+                      padding: '8px 12px',
+                      color: 'white',
+                      fontWeight: 'bold',
+                      cursor: loading ? 'not-allowed' : 'pointer',
+                      fontSize: '0.75rem',
+                      opacity: loading ? 0.6 : 1,
+                      transition: 'all 0.3s ease'
+                    }}
+                  >
+                    📋 Ver Todo
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -898,9 +1658,9 @@ export default function Ruleta() {
             background: 'linear-gradient(135deg, #1e293b, #0f172a)',
             borderRadius: '20px',
             padding: '30px',
-            maxWidth: '600px',
+            maxWidth: '800px',
             width: '100%',
-            maxHeight: '80vh',
+            maxHeight: '90vh',
             overflowY: 'auto',
             boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
           }}>
@@ -913,6 +1673,36 @@ export default function Ruleta() {
             }}>
               🎯 Configurar Ruleta
             </h2>
+
+            {/* Selector de configuraciones guardadas */}
+            {configurations.length > 0 && (
+              <div style={{ marginBottom: '20px' }}>
+                <h3 style={{ color: 'white', marginBottom: '10px' }}>Configuraciones Guardadas:</h3>
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                  {configurations.map(config => (
+                    <button
+                      key={config.id}
+                      onClick={() => changeConfiguration(config.id)}
+                      style={{
+                        background: currentConfigId === config.id 
+                          ? 'linear-gradient(135deg, #8b5cf6, #7c3aed)' 
+                          : 'rgba(255, 255, 255, 0.1)',
+                        border: currentConfigId === config.id ? '2px solid #a855f7' : '1px solid rgba(255, 255, 255, 0.2)',
+                        borderRadius: '8px',
+                        padding: '8px 16px',
+                        color: 'white',
+                        fontSize: '0.875rem',
+                        cursor: 'pointer',
+                        transition: 'all 0.3s ease'
+                      }}
+                    >
+                      {config.name}
+                      {config.is_default && ' (Predeterminada)'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             
             <div style={{
               display: 'grid',
@@ -925,7 +1715,7 @@ export default function Ruleta() {
                   borderRadius: '12px',
                   padding: '15px',
                   display: 'grid',
-                  gridTemplateColumns: '1fr 1fr 80px 40px',
+                  gridTemplateColumns: '1fr 1fr 80px 80px 40px',
                   gap: '10px',
                   alignItems: 'center'
                 }}>
@@ -957,7 +1747,7 @@ export default function Ruleta() {
                   />
                   <input
                     type="text"
-                    value={option.emoji}
+                    value={option.emoji || '🎁'}
                     onChange={(e) => updateOption(index, 'emoji', e.target.value)}
                     style={{
                       background: 'rgba(255, 255, 255, 0.1)',
@@ -970,6 +1760,24 @@ export default function Ruleta() {
                     }}
                     placeholder="🎁"
                   />
+                  <select
+                    value={option.rarity || 'common'}
+                    onChange={(e) => updateOption(index, 'rarity', e.target.value)}
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.1)',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '6px',
+                      padding: '8px',
+                      color: 'white',
+                      fontSize: '0.875rem'
+                    }}
+                  >
+                    <option value="common" style={{ background: '#1e293b', color: 'white' }}>Común</option>
+                    <option value="uncommon" style={{ background: '#1e293b', color: 'white' }}>Poco común</option>
+                    <option value="rare" style={{ background: '#1e293b', color: 'white' }}>Raro</option>
+                    <option value="epic" style={{ background: '#1e293b', color: 'white' }}>Épico</option>
+                    <option value="legendary" style={{ background: '#1e293b', color: 'white' }}>Legendario</option>
+                  </select>
                   <button
                     onClick={() => removeOption(index)}
                     disabled={tempOptions.length <= 2}
@@ -1019,6 +1827,7 @@ export default function Ruleta() {
             }}>
               <button
                 onClick={closeConfig}
+                disabled={loading}
                 style={{
                   background: '#6b7280',
                   border: 'none',
@@ -1026,29 +1835,251 @@ export default function Ruleta() {
                   padding: '12px 24px',
                   color: 'white',
                   fontWeight: 'bold',
-                  cursor: 'pointer',
-                  fontSize: '0.875rem'
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  fontSize: '0.875rem',
+                  opacity: loading ? 0.6 : 1
                 }}
               >
                 Cancelar
               </button>
               <button
                 onClick={saveConfig}
+                disabled={loading}
+                style={{
+                  background: loading 
+                    ? '#6b7280' 
+                    : 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '12px 24px',
+                  color: 'white',
+                  fontWeight: 'bold',
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  fontSize: '0.875rem',
+                  opacity: loading ? 0.6 : 1
+                }}
+              >
+                {loading ? 'Guardando...' : 'Guardar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de historial */}
+      {showHistory && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.8)',
+          zIndex: 1000,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '20px'
+        }}>
+          <div style={{
+            background: 'linear-gradient(135deg, #1e293b, #0f172a)',
+            borderRadius: '20px',
+            padding: '30px',
+            maxWidth: '800px',
+            width: '100%',
+            maxHeight: '90vh',
+            overflowY: 'auto',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h2 style={{
+                color: 'white',
+                fontSize: '1.5rem',
+                fontWeight: 'bold',
+                margin: 0
+              }}>
+                📊 Historial de Giros
+              </h2>
+              <button
+                onClick={() => setShowHistory(false)}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: '40px',
+                  height: '40px',
+                  color: 'white',
+                  cursor: 'pointer',
+                  fontSize: '1.25rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {loading ? (
+              <div style={{ 
+                textAlign: 'center', 
+                color: 'white', 
+                padding: '40px' 
+              }}>
+                Cargando historial...
+              </div>
+            ) : spinHistory.length === 0 ? (
+              <div style={{ 
+                textAlign: 'center', 
+                color: '#9ca3af', 
+                padding: '40px' 
+              }}>
+                No hay giros registrados aún
+              </div>
+            ) : (
+              <div style={{ maxHeight: '500px', overflowY: 'auto' }}>
+                {spinHistory.map((spin, index) => (
+                  <div
+                    key={spin.id}
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.1)',
+                      borderRadius: '12px',
+                      padding: '15px',
+                      marginBottom: '10px',
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 2fr 1fr 1fr',
+                      gap: '15px',
+                      alignItems: 'center'
+                    }}
+                  >
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ 
+                        fontSize: '2rem', 
+                        marginBottom: '5px' 
+                      }}>
+                        {JSON.parse(spin.winner_option).emoji || '🎁'}
+                      </div>
+                      <div style={{ 
+                        color: '#9ca3af', 
+                        fontSize: '0.75rem' 
+                      }}>
+                        Giro #{spin.spin_number}
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <div style={{ 
+                        color: 'white', 
+                        fontWeight: 'bold', 
+                        marginBottom: '5px' 
+                      }}>
+                        {JSON.parse(spin.winner_option).label}
+                      </div>
+                      <div style={{ 
+                        color: '#9ca3af', 
+                        fontSize: '0.875rem' 
+                      }}>
+                        {spin.roulette_name || 'Ruleta Épica'}
+                      </div>
+                      {spin.triggered_by_donation && (
+                        <div style={{ 
+                          color: '#fbbf24', 
+                          fontSize: '0.75rem' 
+                        }}>
+                          💰 Activado por donación
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ 
+                        color: 'white', 
+                        fontWeight: 'bold' 
+                      }}>
+                        {spin.viewer_count} 👥
+                      </div>
+                      <div style={{ 
+                        color: '#9ca3af', 
+                        fontSize: '0.75rem' 
+                      }}>
+                        {spin.duration_seconds}s
+                      </div>
+                    </div>
+                    
+                    <div style={{ 
+                      color: '#9ca3af', 
+                      fontSize: '0.75rem',
+                      textAlign: 'right' 
+                    }}>
+                      {new Date(spin.created_at).toLocaleString('es-ES', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div style={{
+              display: 'flex',
+              gap: '10px',
+              justifyContent: 'center',
+              marginTop: '20px'
+            }}>
+              <button
+                onClick={() => loadSpinHistory()}
+                disabled={loading}
                 style={{
                   background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
                   border: 'none',
                   borderRadius: '8px',
-                  padding: '12px 24px',
+                  padding: '10px 20px',
+                  color: 'white',
+                  fontWeight: 'bold',
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  fontSize: '0.875rem',
+                  opacity: loading ? 0.6 : 1
+                }}
+              >
+                🔄 Actualizar
+              </button>
+              <button
+                onClick={() => setShowHistory(false)}
+                style={{
+                  background: '#6b7280',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '10px 20px',
                   color: 'white',
                   fontWeight: 'bold',
                   cursor: 'pointer',
                   fontSize: '0.875rem'
                 }}
               >
-                Guardar
+                Cerrar
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {error && (
+        <div style={{
+          position: 'fixed',
+          top: '20px',
+          right: '20px',
+          background: 'linear-gradient(135deg, #ef4444, #dc2626)',
+          color: 'white',
+          padding: '15px 20px',
+          borderRadius: '10px',
+          boxShadow: '0 10px 25px rgba(239, 68, 68, 0.3)',
+          zIndex: 9999,
+          cursor: 'pointer'
+        }} onClick={() => setError(null)}>
+          {error}
         </div>
       )}
 
@@ -1098,3 +2129,5 @@ export default function Ruleta() {
     </div>
   );
 }
+
+export default Ruleta;

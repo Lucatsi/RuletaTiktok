@@ -4,6 +4,7 @@ class SocketService {
   constructor() {
     this.socket = null;
     this.listeners = new Map();
+  this.lastJoinData = null; // Para re-unirse tras reconexión
   }
 
   connect() {
@@ -16,6 +17,10 @@ class SocketService {
 
     this.socket.on('connect', () => {
       console.log('✅ Conectado al servidor WebSocket');
+      // Re-unirse a la sala de juego automáticamente si hay datos previos
+      if (this.lastJoinData) {
+        this.socket.emit('join-game', this.lastJoinData);
+      }
     });
 
     this.socket.on('disconnect', (reason) => {
@@ -40,11 +45,8 @@ class SocketService {
   joinGame(gameType, userId, tiktokUsername = null) {
     if (!this.socket) this.connect();
     
-    this.socket.emit('join-game', {
-      gameType,
-      userId,
-      tiktokUsername,
-    });
+  this.lastJoinData = { gameType, userId, tiktokUsername };
+  this.socket.emit('join-game', this.lastJoinData);
   }
 
   // Desconectar del live de TikTok
@@ -81,6 +83,10 @@ class SocketService {
 
   onTikTokDisconnected(callback) {
     this.addEventListener('tiktok-disconnected', callback);
+  }
+
+  onTikTokViewers(callback) {
+    this.addEventListener('tiktok-viewers', callback);
   }
 
   onTikTokError(callback) {
