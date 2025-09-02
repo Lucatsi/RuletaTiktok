@@ -1360,37 +1360,49 @@ function Ruleta() {
           {/* Stats rápidas - abajo a la izquierda */}
           <div style={{
             position: 'absolute',
-                bottom: '-96px',
+                bottom: '24px',
             left: '24px',
             display: 'flex',
                 width: '240px',
                 height: '120px',
           }}>
             <div style={{
-              background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.3), rgba(147, 51, 234, 0.3))',
+              background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.35), rgba(236, 72, 153, 0.35))',
               backdropFilter: 'blur(16px)',
               color: 'white',
-              padding: '12px 24px',
+              padding: '12px 18px',
               borderRadius: '12px',
               textAlign: 'center',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
-              boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)'
+              border: '1px solid rgba(139, 92, 246, 0.45)',
+              boxShadow: '0 10px 25px -5px rgba(139, 92, 246, 0.35), 0 4px 12px rgba(0,0,0,0.15)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '50%'
             }}>
+              <div style={{ fontSize: '0.875rem', opacity: 0.9 }}>🎯</div>
               <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#60a5fa' }}>{stats.totalSpins}</div>
-              <div style={{ fontSize: '0.875rem', opacity: 0.8 }}>GIROS</div>
+              <div style={{ fontSize: '0.8rem', opacity: 0.9, color: '#e9d5ff', marginTop: '2px', fontWeight: 700 }}>GIROS</div>
             </div>
             <div style={{
-              background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.3), rgba(5, 150, 105, 0.3))',
+              background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.35), rgba(5, 150, 105, 0.35))',
               backdropFilter: 'blur(16px)',
               color: 'white',
-              padding: '12px 24px',
+              padding: '12px 18px',
               borderRadius: '12px',
               textAlign: 'center',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
-              boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)'
+              border: '1px solid rgba(34, 197, 94, 0.45)',
+              boxShadow: '0 10px 25px -5px rgba(34, 197, 94, 0.35), 0 4px 12px rgba(0,0,0,0.15)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '50%'
             }}>
+              <div style={{ fontSize: '0.875rem', opacity: 0.9 }}>🎁</div>
               <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#4ade80' }}>{stats.totalGifts}</div>
-              <div style={{ fontSize: '0.875rem', opacity: 0.8 }}>REGALOS</div>
+              <div style={{ fontSize: '0.8rem', opacity: 0.9, color: '#d1fae5', marginTop: '2px', fontWeight: 700 }}>REGALOS</div>
             </div>
           </div>
         </div>
