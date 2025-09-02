@@ -75,26 +75,38 @@ class TikTokService {
       });
 
       // Evento: regalo recibido
-    tiktokLiveConnection.on('gift', (data) => {
-        console.log(`🎁 Regalo: ${data.giftName} x${data.repeatCount} de @${data.uniqueId}`);
-        
-        const giftData = {
-          type: 'gift',
-      donorName: data.uniqueId,
-      displayName: data.nickname,
-      username: data.uniqueId,
-          giftName: data.giftName,
-          giftId: data.giftId,
-          giftCount: data.repeatCount,
-          coinsValue: data.diamondCount * data.repeatCount,
-          timestamp: Date.now()
-        };
+      tiktokLiveConnection.on('gift', (data) => {
+        try {
+          // Evitar duplicados de racha: para regalos repetibles (giftType===1),
+          // sólo emitir cuando la racha termina (repeatEnd === true).
+          if (Number(data.giftType) === 1 && !data.repeatEnd) {
+            return;
+          }
 
-        // Enviar regalo al frontend en tiempo real
-        this.io.to(`game-${userId}`).emit('tiktok-gift', giftData);
-        
-        // Guardar en base de datos si hay una sesión activa
-        this.recordDonationIfActive(userId, giftData);
+          console.log(`🎁 Regalo: ${data.giftName} x${data.repeatCount} de @${data.uniqueId} ${data.repeatEnd ? '(final racha)' : ''}`);
+
+          const giftData = {
+            type: 'gift',
+            donorName: data.uniqueId,
+            displayName: data.nickname,
+            username: data.uniqueId,
+            giftName: data.giftName,
+            giftId: data.giftId,
+            giftCount: data.repeatCount,
+            coinsValue: data.diamondCount * data.repeatCount,
+            giftType: data.giftType,
+            repeatEnd: !!data.repeatEnd,
+            timestamp: Date.now()
+          };
+
+          // Enviar regalo al frontend en tiempo real
+          this.io.to(`game-${userId}`).emit('tiktok-gift', giftData);
+
+          // Guardar en base de datos si hay una sesión activa
+          this.recordDonationIfActive(userId, giftData);
+        } catch (err) {
+          console.error('Error procesando gift:', err);
+        }
       });
 
       // Evento: comentario

@@ -14,7 +14,7 @@ function Ruleta() {
   const [donorTotals, setDonorTotals] = useState({});
   const lastLikeTotalRef = useRef({});
   const seenLikesRef = useRef(new Set());
-  const seenGiftsRef = useRef(new Set());
+  const seenGiftsMapRef = useRef(new Map()); // key: userId|giftId -> { ts, count, coins }
   const [chatMessages, setChatMessages] = useState([]);
   const seenMessagesRef = useRef(new Set());
   const [notification, setNotification] = useState(null);
@@ -26,6 +26,7 @@ function Ruleta() {
   const [showWinner, setShowWinner] = useState(false);
   const [isFinalWinner, setIsFinalWinner] = useState(false);
   const [particles, setParticles] = useState([]);
+  const [lastDonationOutcome, setLastDonationOutcome] = useState(null); // { donorName, remainingLives, eliminated }
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [acceptingParticipants, setAcceptingParticipants] = useState(false);
@@ -321,22 +322,32 @@ function Ruleta() {
     const onGift = (gift) => {
   // Confirmar conexión al recibir gifts
   setIsConnected(true);
-      const count = Number(gift?.giftCount ?? gift?.count ?? gift?.repeatCount ?? 1);
-      const coins = Number(gift?.coinsValue ?? gift?.coins ?? gift?.diamondCount ?? 0);
+  const count = Number(gift?.giftCount ?? gift?.count ?? gift?.repeatCount ?? 1);
+  const coins = Number(gift?.coinsValue ?? gift?.coins ?? gift?.diamondCount ?? 0);
+  const repeatEnd = !!gift?.repeatEnd;
+  const giftType = Number(gift?.giftType ?? 0);
       const name = getDisplayName(gift);
-      // Dedupe de gifts: firma por usuario+gift+coins+count dentro de 5s
+      // Dedupe robusto: por usuario único (uniqueId) + giftId en ventana 8s
       try {
-        const giftName = gift?.giftName ?? gift?.gift ?? 'Gift';
-        const bucket = Math.floor((Date.now()) / 5000); // ventana 5s
-        const sig = `${normalize(name)}|${normalize(giftName)}|${coins}|${count}|${bucket}`;
-        if (seenGiftsRef.current.has(sig)) {
-          return;
+        const userKey = normalize(gift?.username || gift?.uniqueId || gift?.donorName || name);
+        const giftKey = (gift?.giftId != null) ? String(gift.giftId) : normalize(gift?.giftName || gift?.gift || 'gift');
+        const sig = `${userKey}|${giftKey}`;
+        const now = Date.now();
+        const prev = seenGiftsMapRef.current.get(sig);
+        if (prev && (now - prev.ts) < 1000) {
+          // Ignorar sólo si es exactamente igual (mismo conteo y monedas) en ~1s (duplicado real)
+          if (count === prev.count && coins === prev.coins) {
+            return;
+          }
         }
-        seenGiftsRef.current.add(sig);
-        if (seenGiftsRef.current.size > 800) {
-          // recorte básico para no crecer infinito
-          const arr = Array.from(seenGiftsRef.current);
-          seenGiftsRef.current = new Set(arr.slice(-600));
+        // Actualizar registro
+        seenGiftsMapRef.current.set(sig, { ts: now, count, coins });
+        // Limpieza ocasional
+        if (seenGiftsMapRef.current.size > 600) {
+          const cutoff = now - 120000; // 2 min
+          for (const [k, v] of seenGiftsMapRef.current.entries()) {
+            if (!v || (v.ts || 0) < cutoff) seenGiftsMapRef.current.delete(k);
+          }
         }
       } catch {}
       const donation = {
@@ -346,6 +357,8 @@ function Ruleta() {
         count,
         gift: gift?.giftName ?? gift?.gift ?? 'Gift',
         coins,
+        repeatEnd,
+        giftType,
         lifeAdded: Math.max(0, Math.floor(coins)),
         type: 'gift',
         timestamp: Date.now()
@@ -534,7 +547,13 @@ function Ruleta() {
             const map = new Map(prev.map(p => [p.key, { ...p }]));
             const item = map.get(k);
             if (!item) return prev;
-            item.lives = Math.max(0, (item.lives || 0) - 1);
+            const before = Number(item.lives || 0);
+            const after = Math.max(0, before - 1);
+            item.lives = after;
+            // Registrar resultado para el modal
+            try {
+              setLastDonationOutcome({ donorName: item.name, remainingLives: after, eliminated: after === 0 });
+            } catch {}
             if (item.lives <= 0) {
               map.delete(k);
             } else {
@@ -558,7 +577,7 @@ function Ruleta() {
       // Ocultar ganador luego de 5s
       setTimeout(() => {
         setShowWinner(false);
-        setTimeout(() => setWinner(null), 500);
+  setTimeout(() => { setWinner(null); setLastDonationOutcome(null); }, 500);
       }, 5000);
     }, 4000);
   };
@@ -1376,7 +1395,7 @@ function Ruleta() {
                 <button
                   onClick={() => {
                     setShowWinner(false);
-                    setTimeout(() => setWinner(null), 500);
+                    setTimeout(() => { setWinner(null); setLastDonationOutcome(null); }, 500);
                   }}
                   style={{
                     position: 'absolute',
@@ -1438,13 +1457,17 @@ function Ruleta() {
                     <p style={{
                       fontSize: '1.25rem',
                       opacity: 0.9,
-                      textTransform: 'capitalize',
+                      textTransform: 'none',
                       background: 'rgba(0, 0, 0, 0.2)',
                       padding: '4px 16px',
                       borderRadius: '9999px',
                       display: 'inline-block'
                     }}>
-                      Eliminado de la ruleta
+                      {mode === 'donation' && lastDonationOutcome
+                        ? (lastDonationOutcome.eliminated
+                            ? 'Eliminado (sin vidas)'
+                            : `Pierde 1 vida · ❤️ ${lastDonationOutcome.remainingLives} restantes`)
+                        : 'Eliminado de la ruleta'}
                     </p>
                   )}
                 </div>
