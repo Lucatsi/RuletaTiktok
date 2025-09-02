@@ -493,22 +493,20 @@ function Ruleta() {
 
   const resetStats = async () => {
     const clearLocal = () => {
-      setStats(prev => ({ ...prev, totalSpins: 0, totalGifts: 0, totalCoins: 0 }));
+  // Solo reiniciar conteos de la ruleta
+  setStats(prev => ({ ...prev, totalSpins: 0 }));
       setRotation(0);
       setWinner(null);
       setShowWinner(false);
-      setDonations([]);
-      setLikeTotals({});
-      lastLikeTotalRef.current = {};
-      setParticles([]);
-      setSpinHistory([]);
+  // No tocar donaciones, likes, ni chat
+  setParticles([]);
       // Limpiar participantes añadidos por chat
       participantsRef.current = new Set();
       // Dejar la ruleta completamente vacía después de reset
       setRouletteOptions([]);
       setTempOptions([]);
       // Limpiar almacenamiento y reiniciar índice de colores
-      try {
+  try {
         if (user?.id) {
           localStorage.removeItem(participantsStorageKey(user.id));
           const newSid = `session-${Date.now()}`;
@@ -526,11 +524,11 @@ function Ruleta() {
       setLoading(true);
       // Limpiar UI inmediatamente
       clearLocal();
-      // Intentar reset en backend (no bloquea la limpieza local)
+      // Intentar reset en backend (solo ruleta)
       if (currentConfigId && sessionId) {
         await rouletteService.resetRouletteStats(sessionId, currentConfigId);
       }
-      alert('Estadísticas reseteadas');
+      alert('Ruleta reseteada (participantes y giros). Likes, chat y donaciones se mantienen.');
     } catch (e) {
       console.error('Error al resetear estadísticas:', e);
       alert('No se pudo resetear en el servidor, pero la ruleta local fue limpiada.');
@@ -901,6 +899,24 @@ function Ruleta() {
               zIndex: 35
             }}>
               <button
+                onClick={resetStats}
+                disabled={loading}
+                style={{
+                  background: 'linear-gradient(135deg, #ef4444, #dc2626)',
+                  border: 'none',
+                  borderRadius: '12px',
+                  padding: '10px 14px',
+                  color: 'white',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  fontSize: '0.85rem',
+                  boxShadow: '0 4px 15px rgba(239, 68, 68, 0.3)',
+                  opacity: loading ? 0.6 : 1
+                }}
+              >
+                🔄 Resetear
+              </button>
+              <button
                 onClick={openConfig}
                 disabled={loading}
                 style={{
@@ -1206,33 +1222,7 @@ function Ruleta() {
             </div>
           </div>
 
-          {/* Botón Restaurar abajo-derecha de la ruleta */}
-          <div style={{
-            position: 'absolute',
-            left: '50%',
-            bottom: '0px',
-            transform: 'translate(320px, 0)',
-            zIndex: 100
-          }}>
-            <button
-              onClick={resetStats}
-              disabled={loading}
-              style={{
-                background: 'linear-gradient(135deg, rgb(239, 68, 68), rgb(220, 38, 38))',
-                border: 'none',
-                borderRadius: '12px',
-                padding: '10px 14px',
-                color: 'white',
-                fontWeight: 'bold',
-                cursor: 'pointer',
-                fontSize: '0.85rem',
-                boxShadow: '0 4px 15px rgba(239, 68, 68, 0.3)',
-                opacity: 1
-              }}
-            >
-              🔄 Resetear
-            </button>
-          </div>
+          {/* (Botones laterales izquierdos: Resetear y Configurar) */}
 
           {/* Modal de resultado: Eliminado o Ganador Final */}
           {winner && showWinner && (
