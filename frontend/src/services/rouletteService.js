@@ -17,6 +17,9 @@ class RouletteService {
 
   // Headers con autenticación
   getHeaders() {
+  // Leer token fresco de localStorage por si cambió tras login
+  const latestToken = localStorage.getItem('token');
+  this.token = latestToken || this.token;
     return {
       'Content-Type': 'application/json',
       ...(this.token && { Authorization: `Bearer ${this.token}` })

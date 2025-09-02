@@ -23,31 +23,48 @@ function Ruleta() {
   const [rotation, setRotation] = useState(0);
   const [winner, setWinner] = useState(null);
   const [showWinner, setShowWinner] = useState(false);
+  const [isFinalWinner, setIsFinalWinner] = useState(false);
   const [particles, setParticles] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [acceptingParticipants, setAcceptingParticipants] = useState(false);
 
   // Configuraciones y modal
   const [showConfig, setShowConfig] = useState(false);
   const [configurations, setConfigurations] = useState([]);
-  const defaultOptions = [
-    { label: 'Premio 1', color: '#ef4444', textColor: '#ffffff', emoji: '🎁', probability: 1, rarity: 'common' },
-    { label: 'Premio 2', color: '#f59e0b', textColor: '#ffffff', emoji: '⭐', probability: 1, rarity: 'common' },
-    { label: 'Premio 3', color: '#10b981', textColor: '#ffffff', emoji: '🎊', probability: 1, rarity: 'common' },
-    { label: 'Premio 4', color: '#3b82f6', textColor: '#ffffff', emoji: '🎉', probability: 1, rarity: 'common' },
-    { label: 'Premio 5', color: '#8b5cf6', textColor: '#ffffff', emoji: '💎', probability: 1, rarity: 'common' },
-    { label: 'Premio 6', color: '#ec4899', textColor: '#ffffff', emoji: '🔥', probability: 1, rarity: 'common' },
-    { label: 'Premio 7', color: '#22c55e', textColor: '#ffffff', emoji: '🎯', probability: 1, rarity: 'common' },
-    { label: 'Premio 8', color: '#06b6d4', textColor: '#ffffff', emoji: '⚡', probability: 1, rarity: 'common' },
-  ];
-  const [rouletteOptions, setRouletteOptions] = useState(defaultOptions);
-  const [tempOptions, setTempOptions] = useState(defaultOptions);
+  const defaultOptions = [];
+  const [rouletteOptions, setRouletteOptions] = useState([]);
+  const [tempOptions, setTempOptions] = useState([]);
   const [currentConfigId, setCurrentConfigId] = useState(null);
   const [spinHistory, setSpinHistory] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
   const [sessionId, setSessionId] = useState(null);
+  // Guía visual de selección (línea desde la flecha al centro)
+  const SHOW_SELECTION_GUIDE = true; // ponlo en false para ocultarla después de verificar
+  const POINTER_OFFSET_DEG = 0; // 0°: guía vertical, misma referencia que la flecha
   // Participantes añadidos por chat (único hasta reset)
   const participantsRef = useRef(new Set());
+  // Índice de color para participantes y paleta de colores bien diferenciados
+  const participantColorIndexRef = useRef(0);
+  const participantPalette = [
+    '#e11d48', '#f59e0b', '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6', '#ef4444', '#10b981',
+    '#f97316', '#84cc16', '#14b8a6', '#0ea5e9', '#6366f1', '#a855f7', '#ec4899', '#f43f5e',
+    '#d946ef', '#db2777', '#16a34a', '#65a30d', '#2563eb', '#0891b2', '#dc2626', '#9333ea'
+  ];
+
+  const getNextParticipantColor = (prevHex) => {
+    let attempts = 0;
+    while (attempts < participantPalette.length) {
+      const color = participantPalette[participantColorIndexRef.current % participantPalette.length];
+      participantColorIndexRef.current += 1;
+      if (!prevHex || color.toLowerCase() !== String(prevHex).toLowerCase()) {
+        return color;
+      }
+      attempts += 1;
+    }
+    // Fallback (nunca debería llegar): devuelve el primero
+    return participantPalette[0];
+  };
 
   const normalize = (s) => (s || '')
     .toString()
@@ -77,7 +94,8 @@ function Ruleta() {
         rarity: o.rarity || 'common'
       }));
     } catch {
-      return defaultOptions;
+      // Si no hay opciones válidas, dejar vacío por defecto
+      return [];
     }
   };
 
@@ -104,19 +122,36 @@ function Ruleta() {
     );
   };
 
-  // Cargar configuraciones al inicio
+  // Helpers de storage para participantes por usuario
+  const participantsStorageKey = (uid) => `roulette:participants:${uid}`;
+  const acceptingStorageKey = (uid) => `roulette:accepting:${uid}`;
+  const sessionStorageKey = (uid) => `roulette:session:${uid}`;
+
+  const saveParticipantsToStorage = (uid, options) => {
+    try {
+      const onlyParticipants = (options || []).filter(o => o?.isParticipant);
+      localStorage.setItem(participantsStorageKey(uid), JSON.stringify(onlyParticipants));
+    } catch {}
+  };
+
+  const loadParticipantsFromStorage = (uid) => {
+    try {
+      const raw = localStorage.getItem(participantsStorageKey(uid));
+      if (!raw) return [];
+      const arr = JSON.parse(raw);
+      return Array.isArray(arr) ? arr : [];
+    } catch {
+      return [];
+    }
+  };
+
+  // Cargar configuraciones al inicio (sin auto-aplicar, ruleta vacía por defecto)
   const loadConfigurations = async () => {
     try {
       setLoading(true);
       const configs = await rouletteService.getConfigurations();
       setConfigurations(configs || []);
-      if ((configs || []).length > 0) {
-        const cfg = configs.find(c => c.is_default) || configs[0];
-        setCurrentConfigId(cfg.id);
-        const parsed = parseOptions(cfg.options);
-        setRouletteOptions(parsed);
-        setTempOptions(parsed);
-      }
+      // No auto-cargar ninguna configuración para mantener vacía salvo elección manual
     } catch (e) {
       console.error('Error al cargar configuraciones:', e);
       setError(e.message || 'Error de configuraciones');
@@ -125,12 +160,37 @@ function Ruleta() {
     }
   };
 
+  // Inicialización de sesión y restauración de participantes
   useEffect(() => {
-    // ID de sesión simple local si no viene del backend
-    setSessionId(`session-${Date.now()}`);
     loadConfigurations();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    // Mantener una sessionId estable entre recargas hasta que se haga Reset
+    const existing = localStorage.getItem(sessionStorageKey(user.id));
+    const sid = existing || `session-${Date.now()}`;
+    if (!existing) localStorage.setItem(sessionStorageKey(user.id), sid);
+    setSessionId(sid);
+    // Restaurar participantes persistidos
+    const saved = loadParticipantsFromStorage(user.id);
+    if (Array.isArray(saved) && saved.length > 0) {
+      setRouletteOptions(saved);
+      setTempOptions(saved);
+      // Rellenar set de participantes para dedupe
+      try {
+        saved.forEach(o => {
+          const name = String(o?.label || '').replace(/^@+/, '').trim();
+          const key = normalize(name);
+          if (key) participantsRef.current.add(key);
+        });
+      } catch {}
+    }
+  // Bandera de inscripciones (por defecto cerrada)
+  const acc = localStorage.getItem(acceptingStorageKey(user.id));
+  setAcceptingParticipants(acc === 'true');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
 
   // Socket: unión y listeners
   useEffect(() => {
@@ -161,7 +221,7 @@ function Ruleta() {
         setStats(prev => ({ ...prev, viewers: v }));
         if (v > 0) setIsConnected(true);
       };
-    const onChat = (msg) => {
+  const onChat = (msg) => {
   // Cualquier evento de chat confirma conexión al live
   setIsConnected(true);
       // Dedupe: usar id si viene; si no, construir firma estable por 2s
@@ -176,26 +236,47 @@ function Ruleta() {
         seenMessagesRef.current = new Set(Array.from(seenMessagesRef.current).slice(-300));
       }
 
-  // Detectar frase "yo quiero participar" (tolerante a tildes/casos/emoji/puntuación)
+  // Detectar frase "yo quiero participar" y variantes (tolerante a tildes/typos/emoji/puntuación)
   const norm = normalize(baseText);
   const cleaned = norm.replace(/[^a-z0-9\s@]/g, ' ').replace(/\s+/g, ' ').trim();
-  // Acepta "yo quiero participar", "quiero participar", "kiero participar" y variantes con typo como "partcipar"
-  const wantsToJoin = /(\byo\s+)?(quiero|kiero)\s+part/.test(cleaned);
-  if (wantsToJoin) {
+  // Variantes para "quiero":
+  const quiero = /(quiero|kiero|qiero|qro|kro|kero|qero)/;
+  // Variantes/sinónimos de unirse (muy permisivo a typos comunes):
+  const unirse = /(particip|partisip|part\b|entrar|entro|meter|meteme|unir|sumar|anotar|apuntar|jugar|juego|ruleta)/;
+  const wantsToJoin =
+    // "(yo )?quiero ... (participar/entrar/etc)"
+    new RegExp(`(\\byo\\s+)?${quiero.source}\\s+${unirse.source}`).test(cleaned) ||
+    // Frases cortas típicas
+    /\b(yo\s+)?participo\b/.test(cleaned) ||
+    /\bme\s+apunto\b/.test(cleaned) ||
+    /\b(apuntame|apuntarme|apuntenme|apuntame)\b/.test(cleaned) ||
+    /\b(anotame|anotarme|anotenme)\b/.test(cleaned) ||
+    /\b(me\s+uno|me\s+sumo)\b/.test(cleaned) ||
+    /\b(sumame|sumarme|sumenme)\b/.test(cleaned) ||
+    /\b(agregame|agregarme|incluyeme|incluyanme)\b/.test(cleaned) ||
+    /\b(meteme|metanme|ponme)\b/.test(cleaned) ||
+    // "particip" en general (participo/participar/participa)
+    /\bparticip\w*\b/.test(cleaned);
+  if (wantsToJoin && acceptingParticipants && !isSpinning) {
         const key = normalize(msg?.username || msg?.uniqueId || baseUser);
         if (!participantsRef.current.has(key)) {
           participantsRef.current.add(key);
           const disp = (getDisplayName(msg) || '').toString().replace(/^@+/, '').trim();
+          const lastColor = (rouletteOptions[rouletteOptions.length - 1] || {}).color;
           const opt = {
             label: `@${disp}`,
-            color: colorFromName(disp),
+            color: getNextParticipantColor(lastColor),
             textColor: '#ffffff',
             emoji: '🙋',
             probability: 1,
             rarity: 'common',
             isParticipant: true
           };
-          setRouletteOptions(prev => [...prev, opt]);
+          setRouletteOptions(prev => {
+            const next = [...prev, opt];
+            if (user?.id) saveParticipantsToStorage(user.id, next);
+            return next;
+          });
           setTempOptions(prev => [...prev, opt]);
         }
       }
@@ -273,7 +354,7 @@ function Ruleta() {
     socketService.removeAllEventListeners('tiktok-gift');
     socketService.removeAllEventListeners('tiktok-viewers');
     };
-  }, [user]);
+  }, [user, acceptingParticipants]);
 
   const handleManualReconnect = () => {
     if (!user) return;
@@ -284,21 +365,39 @@ function Ruleta() {
   // Lógica de la ruleta
   const spinRoulette = async (triggeredByDonation = false, donationId = null) => {
     if (isSpinning || rouletteOptions.length === 0) return;
-    const selectedOption = chooseWeighted(rouletteOptions);
-    const anglePer = 360 / rouletteOptions.length;
-    const index = rouletteOptions.indexOf(selectedOption);
-    const targetAngle = 360 - (index * anglePer + anglePer / 2);
+    // Si solo queda 1 opción, ya hay ganador final sin girar
+    if (rouletteOptions.length === 1) {
+      const only = rouletteOptions[0];
+      setWinner(only);
+      setIsFinalWinner(true);
+      setShowWinner(true);
+      return;
+    }
+    // Congelar opciones durante este giro para que no cambie la geometría
+    const optionsSnapshot = [...rouletteOptions];
+    const anglePer = 360 / optionsSnapshot.length;
     const extraSpins = 5 + Math.floor(Math.random() * 3);
-    const totalRotation = rotation + extraSpins * 360 + targetAngle;
+    // Ángulo aleatorio para que el ganador sea determinado por la flecha
+    const randomAngle = Math.random() * 360;
+    const totalRotation = rotation + extraSpins * 360 + randomAngle;
     const start = Date.now();
 
     setIsSpinning(true);
     setRotation(totalRotation);
 
     setTimeout(async () => {
-      setIsSpinning(false);
-      setWinner(selectedOption);
-      setShowWinner(true);
+  setIsSpinning(false);
+  // Calcular el índice ganador según la flecha (top)
+  const norm = ((totalRotation % 360) + 360) % 360; // 0..359
+  // Offset fino por si el puntero visual (triángulo/círculo) no coincide exactamente con las 12 en punto
+  const pointerOffsetDeg = POINTER_OFFSET_DEG; // usar el mismo valor que la guía visual
+  const fromTop = ((360 - norm + pointerOffsetDeg) % 360 + 360) % 360; // ángulo 0..360 bajo la flecha
+  // Selección exacta: el sector cuyo intervalo angular contiene la línea (sin centrar)
+  const selectedIndex = Math.floor(fromTop / anglePer) % optionsSnapshot.length;
+  const selectedOption = optionsSnapshot[selectedIndex];
+  setWinner(selectedOption);
+  setIsFinalWinner(false);
+  setShowWinner(true);
       const duration = Math.max(1, Math.round((Date.now() - start) / 1000));
       setStats(prev => ({ ...prev, totalSpins: prev.totalSpins + 1 }));
 
@@ -335,6 +434,40 @@ function Ruleta() {
         console.error('Error al registrar el giro:', e);
       }
 
+      // Modo eliminación: remover la opción seleccionada del tablero
+      setRouletteOptions(prev => {
+        // Preferir coincidencia por contenido para evitar errores si la lista cambió durante el giro
+        let idx = prev.findIndex(o =>
+          o && selectedOption &&
+          o.label === selectedOption.label &&
+          o.color === selectedOption.color &&
+          (o.emoji || '') === (selectedOption.emoji || '')
+        );
+        if (idx === -1) {
+          // Fallback al índice calculado contra el snapshot si las longitudes son iguales
+          if (prev.length === optionsSnapshot.length && selectedIndex >= 0 && selectedIndex < prev.length) {
+            idx = selectedIndex;
+          }
+        }
+        let next = prev;
+        if (idx !== -1) {
+          next = [...prev.slice(0, idx), ...prev.slice(idx + 1)];
+        }
+        // Persistir solo participantes si aplica
+        try { if (user?.id) saveParticipantsToStorage(user.id, next); } catch {}
+        // Mantener en tempOptions también
+        setTempOptions(next);
+        // Si queda 1, declararlo ganador final
+        if (next.length === 1) {
+          setTimeout(() => {
+            setWinner(next[0]);
+            setIsFinalWinner(true);
+            setShowWinner(true);
+          }, 200); // pequeño delay tras cerrar el modal anterior
+        }
+        return next;
+      });
+
       // Ocultar ganador luego de 5s
       setTimeout(() => {
         setShowWinner(false);
@@ -359,11 +492,7 @@ function Ruleta() {
   };
 
   const resetStats = async () => {
-    try {
-      setLoading(true);
-      if (currentConfigId && sessionId) {
-        await rouletteService.resetRouletteStats(sessionId, currentConfigId);
-      }
+    const clearLocal = () => {
       setStats(prev => ({ ...prev, totalSpins: 0, totalGifts: 0, totalCoins: 0 }));
       setRotation(0);
       setWinner(null);
@@ -373,14 +502,38 @@ function Ruleta() {
       lastLikeTotalRef.current = {};
       setParticles([]);
       setSpinHistory([]);
-  // Limpiar participantes añadidos por chat y removerlos de opciones
-  participantsRef.current = new Set();
-  setRouletteOptions(prev => prev.filter(o => !o.isParticipant));
-  setTempOptions(prev => prev.filter(o => !o.isParticipant));
+      // Limpiar participantes añadidos por chat
+      participantsRef.current = new Set();
+      // Dejar la ruleta completamente vacía después de reset
+      setRouletteOptions([]);
+      setTempOptions([]);
+      // Limpiar almacenamiento y reiniciar índice de colores
+      try {
+        if (user?.id) {
+          localStorage.removeItem(participantsStorageKey(user.id));
+          const newSid = `session-${Date.now()}`;
+          localStorage.setItem(sessionStorageKey(user.id), newSid);
+          setSessionId(newSid);
+      // Abrir inscripciones tras reset
+      localStorage.setItem(acceptingStorageKey(user.id), 'true');
+        }
+      } catch {}
+      participantColorIndexRef.current = 0;
+    setAcceptingParticipants(true);
+    };
+
+    try {
+      setLoading(true);
+      // Limpiar UI inmediatamente
+      clearLocal();
+      // Intentar reset en backend (no bloquea la limpieza local)
+      if (currentConfigId && sessionId) {
+        await rouletteService.resetRouletteStats(sessionId, currentConfigId);
+      }
       alert('Estadísticas reseteadas');
     } catch (e) {
       console.error('Error al resetear estadísticas:', e);
-      alert('Error al resetear estadísticas: ' + (e.message || ''));
+      alert('No se pudo resetear en el servidor, pero la ruleta local fue limpiada.');
     } finally {
       setLoading(false);
     }
@@ -765,24 +918,6 @@ function Ruleta() {
               >
                 ⚙️ Configurar
               </button>
-              <button
-                onClick={resetStats}
-                disabled={loading}
-                style={{
-                  background: 'linear-gradient(135deg, #ef4444, #dc2626)',
-                  border: 'none',
-                  borderRadius: '12px',
-                  padding: '10px 14px',
-                  color: 'white',
-                  fontWeight: 'bold',
-                  cursor: loading ? 'not-allowed' : 'pointer',
-                  fontSize: '0.85rem',
-                  boxShadow: '0 4px 15px rgba(239, 68, 68, 0.3)',
-                  opacity: loading ? 0.6 : 1
-                }}
-              >
-                🔄 Resetear
-              </button>
             </div>
 
             {/* Acciones laterales (derecha) */}
@@ -849,7 +984,8 @@ function Ruleta() {
                 background: 'linear-gradient(to bottom, #ef4444, #dc2626, #991b1b)',
                 borderRadius: '0 0 50% 50%',
                 boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
-                borderTop: '4px solid #f87171'
+                borderTop: '4px solid #f87171',
+                pointerEvents: 'none'
               }}></div>
               
               {/* Aro exterior con luces LED */}
@@ -1037,11 +1173,68 @@ function Ruleta() {
                     }}></div>
                   </div>
                 </div>
+
+                {/* Línea guía de selección (opcional) */}
+                {SHOW_SELECTION_GUIDE && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      pointerEvents: 'none',
+                      zIndex: 29
+                    }}
+                  >
+                    {/* La línea debe permanecer con la misma referencia que el puntero: vertical con offset */}
+          <div
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: '50%',
+                        width: '2px',
+                        height: '320px',
+                        background: 'rgba(34,197,94,0.95)',
+                        boxShadow: '0 0 8px rgba(34,197,94,0.7)',
+                        transform: `translateX(-50%) rotate(${POINTER_OFFSET_DEG}deg)`,
+                        transformOrigin: '50% 20px',
+                        opacity: 0.9,
+                        borderRadius: '2px'
+                      }}
+                    />
+                  </div>
+                )}
               </div>
             </div>
           </div>
 
-          {/* Resultado ganador - flotante */}
+          {/* Botón Restaurar abajo-derecha de la ruleta */}
+          <div style={{
+            position: 'absolute',
+            left: '50%',
+            bottom: '0px',
+            transform: 'translate(320px, 0)',
+            zIndex: 100
+          }}>
+            <button
+              onClick={resetStats}
+              disabled={loading}
+              style={{
+                background: 'linear-gradient(135deg, rgb(239, 68, 68), rgb(220, 38, 38))',
+                border: 'none',
+                borderRadius: '12px',
+                padding: '10px 14px',
+                color: 'white',
+                fontWeight: 'bold',
+                cursor: 'pointer',
+                fontSize: '0.85rem',
+                boxShadow: '0 4px 15px rgba(239, 68, 68, 0.3)',
+                opacity: 1
+              }}
+            >
+              🔄 Resetear
+            </button>
+          </div>
+
+          {/* Modal de resultado: Eliminado o Ganador Final */}
           {winner && showWinner && (
             <div style={{
               position: 'fixed',
@@ -1053,12 +1246,14 @@ function Ruleta() {
               pointerEvents: 'auto'
             }}>
               <div style={{
-                background: 'linear-gradient(45deg, #fbbf24, #f59e0b, #ef4444)',
+                background: isFinalWinner
+                  ? 'linear-gradient(45deg, #fbbf24, #f59e0b, #ef4444)'
+                  : 'linear-gradient(45deg, #ef4444, #dc2626, #b91c1c)',
                 color: 'white',
                 padding: '32px 48px',
                 borderRadius: '20px',
                 boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
-                border: '4px solid #fde047',
+                border: isFinalWinner ? '4px solid #fde047' : '4px solid #fecaca',
                 position: 'relative',
                 overflow: 'hidden',
                 textAlign: 'center'
@@ -1084,7 +1279,8 @@ function Ruleta() {
                     alignItems: 'center',
                     justifyContent: 'center',
                     fontSize: '1rem',
-                    fontWeight: 'bold'
+                    fontWeight: 'bold',
+                    zIndex: 20
                   }}
                 >
                   ✕
@@ -1092,8 +1288,11 @@ function Ruleta() {
                 <div style={{
                   position: 'absolute',
                   inset: 0,
-                  background: 'linear-gradient(45deg, rgba(253, 224, 71, 0.2), rgba(251, 146, 60, 0.2))',
-                  animation: 'pulse 2s infinite'
+                  background: isFinalWinner
+                    ? 'linear-gradient(45deg, rgba(253, 224, 71, 0.2), rgba(251, 146, 60, 0.2))'
+                    : 'linear-gradient(45deg, rgba(239, 68, 68, 0.2), rgba(220, 38, 38, 0.2))',
+                  animation: 'pulse 2s infinite',
+                  pointerEvents: 'none'
                 }}></div>
                 <div style={{ position: 'relative', zIndex: 10 }}>
                   <h2 style={{
@@ -1101,7 +1300,7 @@ function Ruleta() {
                     fontWeight: 'bold',
                     marginBottom: '16px',
                     animation: 'pulse 2s infinite'
-                  }}>🎉 ¡GANADOR! 🎉</h2>
+                  }}>{isFinalWinner ? '🎉 ¡GANADOR FINAL! 🎉' : '❌ Eliminado'}</h2>
                   
                   {/* Emoji del elemento ganador */}
                   <div style={{
@@ -1121,17 +1320,19 @@ function Ruleta() {
                   }}>
                     {winner.label}
                   </p>
-                  <p style={{
-                    fontSize: '1.25rem',
-                    opacity: 0.9,
-                    textTransform: 'capitalize',
-                    background: 'rgba(0, 0, 0, 0.2)',
-                    padding: '4px 16px',
-                    borderRadius: '9999px',
-                    display: 'inline-block'
-                  }}>
-                    {winner.rarity}
-                  </p>
+                  {!isFinalWinner && (
+                    <p style={{
+                      fontSize: '1.25rem',
+                      opacity: 0.9,
+                      textTransform: 'capitalize',
+                      background: 'rgba(0, 0, 0, 0.2)',
+                      padding: '4px 16px',
+                      borderRadius: '9999px',
+                      display: 'inline-block'
+                    }}>
+                      Eliminado de la ruleta
+                    </p>
+                  )}
                 </div>
               </div>
             </div>

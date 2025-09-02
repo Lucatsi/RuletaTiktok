@@ -124,6 +124,67 @@ const migrate = async () => {
     await client.query("CREATE INDEX IF NOT EXISTS idx_donations_game ON donations(game_id)");
     await client.query("CREATE INDEX IF NOT EXISTS idx_donations_donor ON donations(donor_name)");
 
+    // === Tablas de Ruleta ===
+    console.log('🔧 Verificando/Actualizando tablas de ruleta...');
+
+    // Configuraciones de ruleta
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS roulette_configurations (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        name VARCHAR(150) NOT NULL,
+        description TEXT,
+        options JSONB NOT NULL DEFAULT '[]',
+        is_default BOOLEAN DEFAULT false,
+        is_active BOOLEAN DEFAULT true,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await client.query("CREATE INDEX IF NOT EXISTS idx_roulette_cfg_user ON roulette_configurations(user_id)");
+    await client.query("CREATE INDEX IF NOT EXISTS idx_roulette_cfg_active ON roulette_configurations(is_active)");
+
+    // Historial de giros de ruleta
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS roulette_history (
+        id SERIAL PRIMARY KEY,
+        roulette_config_id INTEGER REFERENCES roulette_configurations(id) ON DELETE CASCADE,
+        session_id VARCHAR(100) NOT NULL,
+        winner_option JSONB NOT NULL,
+        spin_number INTEGER NOT NULL,
+        rotation_degrees INTEGER NOT NULL,
+        duration_seconds INTEGER NOT NULL,
+        triggered_by_donation BOOLEAN DEFAULT false,
+        donation_id INTEGER,
+        viewer_count INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await client.query("CREATE INDEX IF NOT EXISTS idx_roulette_hist_cfg ON roulette_history(roulette_config_id)");
+    await client.query("CREATE INDEX IF NOT EXISTS idx_roulette_hist_session ON roulette_history(session_id)");
+
+    // Estadísticas de sesión de ruleta
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS roulette_session_stats (
+        id SERIAL PRIMARY KEY,
+        session_id VARCHAR(100) NOT NULL,
+        roulette_config_id INTEGER REFERENCES roulette_configurations(id) ON DELETE CASCADE,
+        total_spins INTEGER DEFAULT 0,
+        total_gifts_received INTEGER DEFAULT 0,
+        total_coins_earned INTEGER DEFAULT 0,
+        most_won_option VARCHAR(255),
+        most_won_option_count INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(session_id, roulette_config_id)
+      )
+    `);
+
+    await client.query("CREATE INDEX IF NOT EXISTS idx_roulette_stats_cfg ON roulette_session_stats(roulette_config_id)");
+    await client.query("CREATE INDEX IF NOT EXISTS idx_roulette_stats_session ON roulette_session_stats(session_id)");
+
     client.release();
   } catch (err) {
     console.log('⚠️ Migración no crítica fallida (continuando con la app):', err.message);
