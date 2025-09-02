@@ -13,6 +13,7 @@ function Ruleta() {
   const [likeTotals, setLikeTotals] = useState({});
   const [donorTotals, setDonorTotals] = useState({});
   const lastLikeTotalRef = useRef({});
+  const seenLikesRef = useRef(new Set());
   const [chatMessages, setChatMessages] = useState([]);
   const seenMessagesRef = useRef(new Set());
   const [notification, setNotification] = useState(null);
@@ -45,6 +46,23 @@ function Ruleta() {
   const [spinHistory, setSpinHistory] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
   const [sessionId, setSessionId] = useState(null);
+  // Participantes añadidos por chat (único hasta reset)
+  const participantsRef = useRef(new Set());
+
+  const normalize = (s) => (s || '')
+    .toString()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+
+  const colorFromName = (name) => {
+    // Color HSL determinista según el nombre
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+    const h = hash % 360;
+    return `hsl(${h}, 70%, 45%)`;
+  };
 
   // Utils
   const parseOptions = (opt) => {
@@ -143,33 +161,67 @@ function Ruleta() {
         setStats(prev => ({ ...prev, viewers: v }));
       };
     const onChat = (msg) => {
-      const id = msg?.id || `${msg?.user || msg?.username || msg?.uniqueId}-${msg?.message || msg?.comment}-${Math.floor(Date.now()/2000)}`;
+      // Dedupe: usar id si viene; si no, construir firma estable por 2s
+      const baseUser = msg?.user || msg?.username || msg?.uniqueId || 'u';
+      const baseText = (msg?.message || msg?.comment || '').trim();
+      const timeBucket = Math.floor((msg?.timestamp || Date.now()) / 2000);
+      const id = msg?.id || `${baseUser}-${baseText}-${timeBucket}`;
       if (seenMessagesRef.current.has(id)) return;
       seenMessagesRef.current.add(id);
       if (seenMessagesRef.current.size > 400) {
         // limpiar claves antiguas para evitar crecimiento infinito
         seenMessagesRef.current = new Set(Array.from(seenMessagesRef.current).slice(-300));
       }
+
+  // Detectar frase "yo quiero participar" (tolerante a tildes/casos) o variantes
+  const norm = normalize(baseText);
+  const wantsToJoin = ['yo quiero participar', 'quiero participar'].some(p => norm.includes(p));
+  if (wantsToJoin) {
+        const key = normalize(msg?.username || msg?.uniqueId || baseUser);
+        if (!participantsRef.current.has(key)) {
+          participantsRef.current.add(key);
+          const disp = getDisplayName(msg);
+          const opt = {
+            label: `@${disp}`,
+            color: colorFromName(disp),
+            textColor: '#ffffff',
+            emoji: '🙋',
+            probability: 1,
+            rarity: 'common',
+            isParticipant: true
+          };
+          setRouletteOptions(prev => [...prev, opt]);
+          setTempOptions(prev => [...prev, opt]);
+        }
+      }
       const item = {
         id,
         user: getDisplayName(msg),
-        message: msg?.message || msg?.comment || '',
-        timestamp: Date.now()
+        message: baseText,
+        timestamp: msg?.timestamp || Date.now()
       };
       setChatMessages(prev => [item, ...prev].slice(0, 150));
     };
     const onLike = (ev) => {
       const u = getDisplayName(ev);
-      // Requisito: sumar 1 por evento de like (no 3)
-      const incUser = 1;
+      const totalLikeCount = Number(ev?.totalLikeCount);
+      const likeInc = Math.max(1, Number(ev?.likeCount) || 0); // contar 1 por cada like del evento
+      // Dedupe: mismo usuario y mismo totalLikeCount => ignorar duplicado exacto
+      if (!Number.isNaN(totalLikeCount)) {
+        const key = `${u}-${totalLikeCount}`;
+        if (seenLikesRef.current.has(key)) return;
+        seenLikesRef.current.add(key);
+        if (seenLikesRef.current.size > 500) {
+          seenLikesRef.current = new Set(Array.from(seenLikesRef.current).slice(-400));
+        }
+      }
       setLikeTotals(prev => {
-        const next = { ...prev, [u]: (prev[u] || 0) + incUser };
+        const next = { ...prev, [u]: (prev[u] || 0) + likeInc };
         lastLikeTotalRef.current = next;
         return next;
       });
-      // Mostrar el total de likes del live (si viene de TikTok)
-      if (ev?.totalLikeCount != null) {
-        setStats(prev => ({ ...prev, totalLikes: Number(ev.totalLikeCount) || 0 }));
+      if (!Number.isNaN(totalLikeCount)) {
+        setStats(prev => ({ ...prev, totalLikes: totalLikeCount }));
       }
     };
     const onGift = (gift) => {
@@ -312,6 +364,10 @@ function Ruleta() {
       lastLikeTotalRef.current = {};
       setParticles([]);
       setSpinHistory([]);
+  // Limpiar participantes añadidos por chat y removerlos de opciones
+  participantsRef.current = new Set();
+  setRouletteOptions(prev => prev.filter(o => !o.isParticipant));
+  setTempOptions(prev => prev.filter(o => !o.isParticipant));
       alert('Estadísticas reseteadas');
     } catch (e) {
       console.error('Error al resetear estadísticas:', e);
@@ -667,27 +723,7 @@ function Ruleta() {
             </div>
           </div>
 
-          {/* Título épico */}
-          <div style={{
-            textAlign: 'center',
-            marginBottom: '32px',
-            transform: 'scale(1)',
-            transition: 'transform 0.3s ease'
-          }}>
-            <h1 style={{
-              fontSize: '4rem',
-              fontWeight: 'bold',
-              background: 'linear-gradient(45deg, #fbbf24, #ef4444, #ec4899)',
-              WebkitBackgroundClip: 'text',
-              backgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              marginBottom: '8px',
-              animation: 'pulse 2s infinite'
-            }}>
-              🎰 RULETA ÉPICA
-            </h1>
-            <p style={{ fontSize: '1.25rem', color: '#d1d5db' }}>¡Los regalos giran la suerte!</p>
-          </div>
+          {/* (Título y subtítulo removidos) */}
 
           {/* Ruleta principal */}
           <div style={{ position: 'relative', marginBottom: '32px' }}>
@@ -711,8 +747,8 @@ function Ruleta() {
               <div style={{ position: 'relative' }}>
                 <div style={{
                   position: 'relative',
-                  width: '400px',
-                  height: '400px',
+                  width: '640px',
+                  height: '640px',
                   borderRadius: '50%',
                   boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
                   padding: '8px',
@@ -721,10 +757,10 @@ function Ruleta() {
                   transition: isSpinning ? 'transform 4s cubic-bezier(0.17, 0.67, 0.12, 0.99)' : 'none'
                 }}>
                   {/* Luces LED animadas alrededor */}
-                  {Array.from({ length: 32 }, (_, i) => {
-                    const angle = (360 / 32) * i;
-                    const x = 50 + 47 * Math.cos((angle - 90) * Math.PI / 180);
-                    const y = 50 + 47 * Math.sin((angle - 90) * Math.PI / 180);
+                  {Array.from({ length: 36 }, (_, i) => {
+                    const angle = (360 / 36) * i;
+                    const x = 50 + 48 * Math.cos((angle - 90) * Math.PI / 180);
+                    const y = 50 + 48 * Math.sin((angle - 90) * Math.PI / 180);
                     return (
                       <div
                         key={i}
@@ -757,30 +793,31 @@ function Ruleta() {
                     overflow: 'hidden',
                     border: '4px solid rgba(255, 255, 255, 0.5)'
                   }}>
-                    <svg width="100%" height="100%" viewBox="0 0 400 400">
+          <svg width="100%" height="100%" viewBox="0 0 640 640">
                       {rouletteOptions.map((option, index) => {
                         const angle = 360 / rouletteOptions.length;
                         const startAngle = index * angle;
                         const endAngle = (index + 1) * angle;
                         const startRad = (startAngle - 90) * Math.PI / 180;
                         const endRad = (endAngle - 90) * Math.PI / 180;
-                        const radius = 185;
-                        const x1 = 200 + radius * Math.cos(startRad);
-                        const y1 = 200 + radius * Math.sin(startRad);
-                        const x2 = 200 + radius * Math.cos(endRad);
-                        const y2 = 200 + radius * Math.sin(endRad);
+            const radius = 300;
+            const cx = 320, cy = 320;
+                        const x1 = cx + radius * Math.cos(startRad);
+                        const y1 = cy + radius * Math.sin(startRad);
+                        const x2 = cx + radius * Math.cos(endRad);
+                        const y2 = cy + radius * Math.sin(endRad);
                         const largeArcFlag = angle > 180 ? 1 : 0;
                         const pathData = [
-                          `M 200 200`,
+                          `M ${cx} ${cy}`,
                           `L ${x1} ${y1}`,
                           `A ${radius} ${radius} 0 ${largeArcFlag} 1 ${x2} ${y2}`,
                           `Z`
                         ].join(' ');
                         const textAngle = startAngle + angle / 2;
                         const textRad = (textAngle - 90) * Math.PI / 180;
-                        const textRadius = 130;
-                        const textX = 200 + textRadius * Math.cos(textRad);
-                        const textY = 200 + textRadius * Math.sin(textRad);
+            const textRadius = 225;
+                        const textX = cx + textRadius * Math.cos(textRad);
+                        const textY = cy + textRadius * Math.sin(textRad);
                         
                         return (
                           <g key={index}>
@@ -821,8 +858,8 @@ function Ruleta() {
                       top: '50%',
                       left: '50%',
                       transform: 'translate(-50%, -50%)',
-                      width: '80px',
-                      height: '80px',
+                      width: '112px',
+                      height: '112px',
                       borderRadius: '50%',
                       background: 'linear-gradient(135deg, #fde047, #facc15, #eab308)',
                       border: '4px solid white',
@@ -834,8 +871,8 @@ function Ruleta() {
                       zIndex: 10
                     }}>
                       <div style={{
-                        width: '64px',
-                        height: '64px',
+                        width: '92px',
+                        height: '92px',
                         borderRadius: '50%',
                         background: 'linear-gradient(135deg, #fef3c7, #fde047)',
                         display: 'flex',
@@ -1022,11 +1059,11 @@ function Ruleta() {
           {/* Botones de configuración y reseteo - más abajo */}
           <div style={{
             position: 'absolute',
-            bottom: '80px',
+                bottom: '-80px',
             right: '50%',
             transform: 'translateX(50%)',
-            display: 'flex',
-            gap: '12px',
+                width: '200px',
+                height: '100px',
             zIndex: 25,
             flexWrap: 'wrap',
             justifyContent: 'center'
@@ -1122,11 +1159,11 @@ function Ruleta() {
           {/* Stats rápidas - abajo a la izquierda */}
           <div style={{
             position: 'absolute',
-            bottom: '24px',
+                bottom: '-96px',
             left: '24px',
             display: 'flex',
-            gap: '16px',
-            zIndex: 30
+                width: '240px',
+                height: '120px',
           }}>
             <div style={{
               background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.3), rgba(147, 51, 234, 0.3))',

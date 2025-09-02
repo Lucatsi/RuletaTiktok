@@ -66,6 +66,11 @@ io.on('connection', (socket) => {
     if (tiktokUsername) {
       tiktokService.connectToLive(tiktokUsername, userId);
     }
+
+    // Emitir estado actual al nuevo socket (aunque ya exista la conexión)
+    if (userId) {
+      try { tiktokService.emitCurrentStatus(userId); } catch (_) {}
+    }
   });
 
   // Desconectar del live de TikTok

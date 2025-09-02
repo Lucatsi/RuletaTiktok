@@ -6,13 +6,23 @@ class TikTokService {
     this.io = io;
     this.connections = new Map(); // userId -> connection
     this.gameSettings = new Map(); // userId -> settings
+  this.status = new Map(); // userId -> { connected, username, viewerCount }
   }
 
   async connectToLive(tiktokUsername, userId) {
     try {
-      // Cerrar conexión existente si existe
+      // Evitar múltiples conexiones simultáneas para el mismo usuario.
+      // Si ya existe, solo emitir el estado actual para la sala para que nuevos clientes lo reciban.
       if (this.connections.has(userId)) {
-        this.disconnectFromLive(userId);
+        console.log(`⏭️ Ya hay una conexión activa para userId=${userId}, omitiendo reconexión y emitiendo estado actual.`);
+        const st = this.status.get(userId) || { connected: true, username: tiktokUsername, viewerCount: 0 };
+        this.io.to(`game-${userId}`).emit('tiktok-connected', {
+          connected: true,
+          username: st.username || tiktokUsername,
+          status: { info: 'already-connected' },
+          viewerCount: Number(st.viewerCount || 0)
+        });
+        return;
       }
 
       // Sanear username: quitar @, espacios y usar uniqueId en minúsculas
@@ -35,7 +45,7 @@ class TikTokService {
       });
 
       // Eventos de TikTok Live
-      tiktokLiveConnection.connect().then(state => {
+  tiktokLiveConnection.connect().then(state => {
         console.log(`✅ Conectado al live de @${uniqueId}:`, state);
         // Intentar obtener viewers iniciales de roomInfo
         const initialViewers = (
@@ -47,7 +57,10 @@ class TikTokService {
           0
         );
 
-        this.io.to(`game-${userId}`).emit('tiktok-connected', {
+  // Guardar estado actual
+  this.status.set(userId, { connected: true, username: uniqueId, viewerCount: Number(initialViewers || 0) });
+
+  this.io.to(`game-${userId}`).emit('tiktok-connected', {
           connected: true,
           username: uniqueId,
           status: state,
@@ -100,6 +113,9 @@ class TikTokService {
       // Evento: viewers (conteo en tiempo real)
       tiktokLiveConnection.on('roomUser', (data) => {
         const vc = Number(data?.viewerCount ?? 0);
+        const st = this.status.get(userId) || { connected: true, username: uniqueId, viewerCount: 0 };
+        st.viewerCount = vc;
+        this.status.set(userId, st);
         this.io.to(`game-${userId}`).emit('tiktok-viewers', {
           type: 'viewers',
           viewerCount: vc,
@@ -147,6 +163,7 @@ class TikTokService {
       tiktokLiveConnection.on('disconnected', () => {
         console.log(`🔌 Desconectado del live de @${uniqueId}`);
         this.connections.delete(userId);
+        this.status.set(userId, { connected: false, username: uniqueId, viewerCount: 0 });
         
         this.io.to(`game-${userId}`).emit('tiktok-disconnected', {
           connected: false,
@@ -164,8 +181,8 @@ class TikTokService {
         });
       });
 
-      // Guardar conexión
-      this.connections.set(userId, tiktokLiveConnection);
+  // Guardar conexión
+  this.connections.set(userId, tiktokLiveConnection);
 
     } catch (error) {
       console.error('Error en connectToLive:', error);
@@ -216,6 +233,22 @@ class TikTokService {
       activeConnections: this.connections.size,
       connectedUsers: Array.from(this.connections.keys())
     };
+  }
+
+  // Emitir el estado actual a la sala
+  emitCurrentStatus(userId) {
+    const st = this.status.get(userId);
+    if (st?.connected) {
+      this.io.to(`game-${userId}`).emit('tiktok-connected', {
+        connected: true,
+        username: st.username,
+        viewerCount: Number(st.viewerCount || 0)
+      });
+    } else {
+      this.io.to(`game-${userId}`).emit('tiktok-disconnected', {
+        connected: false
+      });
+    }
   }
 }
 
