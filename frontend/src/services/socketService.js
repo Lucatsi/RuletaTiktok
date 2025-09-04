@@ -11,8 +11,13 @@ class SocketService {
     if (this.socket?.connected) return this.socket;
 
     this.socket = io(import.meta.env.VITE_WS_URL || 'http://localhost:5000', {
-      transports: ['websocket'],
+      transports: ['websocket', 'polling'],
       autoConnect: true,
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 8000,
+      timeout: 20000,
     });
 
     this.socket.on('connect', () => {

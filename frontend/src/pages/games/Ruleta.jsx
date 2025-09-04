@@ -204,8 +204,9 @@ function Ruleta() {
     if (!user) return;
 
     socketService.connect();
-    const tiktokUsername = user.tiktokUsername || user.tiktok_username || null;
-    socketService.joinGame('roulette', user.id, tiktokUsername);
+  const tiktokUsernameRaw = user.tiktokUsername || user.tiktok_username || '';
+  const tiktokUsername = tiktokUsernameRaw ? String(tiktokUsernameRaw).replace(/^@+/, '').trim().toLowerCase() : null;
+  socketService.joinGame('roulette', user.id, tiktokUsername);
 
     const onConnected = (payload) => {
       setIsConnected(true);
@@ -229,11 +230,12 @@ function Ruleta() {
         if (v > 0) setIsConnected(true);
       };
   const onChat = (msg) => {
+  console.log('[Ruleta] tiktok-chat', msg);
   // Cualquier evento de chat confirma conexión al live
   setIsConnected(true);
       // Dedupe: usar id si viene; si no, construir firma estable por 2s
-      const baseUser = msg?.user || msg?.username || msg?.uniqueId || 'u';
-      const baseText = (msg?.message || msg?.comment || '').trim();
+  const baseUser = msg?.user || msg?.displayName || msg?.username || msg?.uniqueId || 'u';
+  const baseText = (msg?.message || msg?.comment || msg?.text || '').trim();
       const timeBucket = Math.floor((msg?.timestamp || Date.now()) / 2000);
       const id = msg?.id || `${baseUser}-${baseText}-${timeBucket}`;
       if (seenMessagesRef.current.has(id)) return;
@@ -289,7 +291,7 @@ function Ruleta() {
       }
       const item = {
         id,
-        user: getDisplayName(msg),
+  user: getDisplayName(msg),
         message: baseText,
         timestamp: msg?.timestamp || Date.now()
       };
