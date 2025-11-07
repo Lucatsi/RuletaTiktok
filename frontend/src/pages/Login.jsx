@@ -218,11 +218,31 @@ const Login = () => {
                   sx={{
                     '& .MuiOutlinedInput-root': {
                       borderRadius: 2,
+                      backgroundColor: '#f8f9fa',
+                      '& fieldset': {
+                        borderColor: '#e0e0e0',
+                        borderWidth: 2,
+                      },
+                      '&:hover': {
+                        backgroundColor: '#ffffff',
+                      },
                       '&:hover fieldset': {
-                        borderColor: '#667eea',
+                        borderColor: '#7e22ce',
+                      },
+                      '&.Mui-focused': {
+                        backgroundColor: '#ffffff',
                       },
                       '&.Mui-focused fieldset': {
-                        borderColor: '#667eea',
+                        borderColor: '#7e22ce',
+                        borderWidth: 2,
+                      }
+                    },
+                    '& .MuiInputLabel-root': {
+                      color: '#333',
+                      fontWeight: 600,
+                      fontSize: '1rem',
+                      '&.Mui-focused': {
+                        color: '#7e22ce',
                       }
                     }
                   }}
@@ -260,11 +280,31 @@ const Login = () => {
                   sx={{
                     '& .MuiOutlinedInput-root': {
                       borderRadius: 2,
+                      backgroundColor: '#f8f9fa',
+                      '& fieldset': {
+                        borderColor: '#e0e0e0',
+                        borderWidth: 2,
+                      },
+                      '&:hover': {
+                        backgroundColor: '#ffffff',
+                      },
                       '&:hover fieldset': {
-                        borderColor: '#667eea',
+                        borderColor: '#7e22ce',
+                      },
+                      '&.Mui-focused': {
+                        backgroundColor: '#ffffff',
                       },
                       '&.Mui-focused fieldset': {
-                        borderColor: '#667eea',
+                        borderColor: '#7e22ce',
+                        borderWidth: 2,
+                      }
+                    },
+                    '& .MuiInputLabel-root': {
+                      color: '#333',
+                      fontWeight: 600,
+                      fontSize: '1rem',
+                      '&.Mui-focused': {
+                        color: '#7e22ce',
                       }
                     }
                   }}
