@@ -519,7 +519,7 @@ const Dashboard = () => {
 
           <Grid container spacing={3}>
             {games.map((game, index) => (
-              <Grid item xs={12} sm={6} lg={6} key={game.title}>
+              <Grid item xs={12} sm={6} md={6} lg={6} xl={3} key={game.title}>
                 <EnhancedGameCard game={game} index={index} />
               </Grid>
             ))}
