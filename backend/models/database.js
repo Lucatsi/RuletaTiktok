@@ -17,6 +17,9 @@ const pool = new Pool({
   port: process.env.DB_PORT,
 });
 
+// Variable para verificar si la DB está disponible
+let dbAvailable = false;
+
 // Migración idempotente para garantizar el esquema esperado por models/User.js
 const migrate = async () => {
   try {
@@ -186,8 +189,10 @@ const migrate = async () => {
     await client.query("CREATE INDEX IF NOT EXISTS idx_roulette_stats_session ON roulette_session_stats(session_id)");
 
     client.release();
+    dbAvailable = true;
   } catch (err) {
     console.log('⚠️ Migración no crítica fallida (continuando con la app):', err.message);
+    dbAvailable = false;
   }
 };
 
@@ -197,12 +202,16 @@ const bootstrap = async () => {
     await migrate();
     const client = await pool.connect();
     console.log('✅ Conexión a PostgreSQL exitosa');
+    dbAvailable = true;
     client.release();
   } catch (err) {
-    console.error('❌ Error conectando a PostgreSQL:', err);
+    console.error('❌ Error conectando a PostgreSQL:', err.message);
+    console.log('⚠️ La aplicación funcionará en modo sin base de datos (datos en memoria)');
+    dbAvailable = false;
   }
 };
 
 bootstrap();
 
 module.exports = pool;
+module.exports.dbAvailable = () => dbAvailable;
