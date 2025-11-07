@@ -1,0 +1,18 @@
+[build]
+  # Directorio donde está tu frontend
+  base = "frontend"
+  # Comando para construir la aplicación
+  command = "npm run build"
+  # Directorio donde se generan los archivos de producción
+  publish = "dist"
+
+# Redirecciones para SPA (Single Page Application)
+# Esto hace que todas las rutas sirvan index.html
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Variables de entorno (opcional - configúralas en Netlify UI también)
+[build.environment]
+  NODE_VERSION = "18"
