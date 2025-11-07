@@ -85,14 +85,14 @@ const Dashboard = () => {
       features: ['Tiempo real', 'Configurable', 'Alertas visuales']
     },
     {
-      title: 'Ranking de Donadores',
-      description: 'Top de donadores en tiempo real durante el live',
+      title: 'Subasta',
+      description: 'Sistema de subastas en tiempo real con donaciones',
       icon: <RankingIcon />,
       route: '/games/ranking',
       color: '#feca57',
       gradient: 'linear-gradient(135deg, #feca57, #ff9ff3)',
       isNew: true,
-      features: ['Top 10', 'Tiempo real', 'Estadísticas']
+      features: ['Timer', 'Pujas en vivo', 'Overlay flotante']
     },
   ];
 
