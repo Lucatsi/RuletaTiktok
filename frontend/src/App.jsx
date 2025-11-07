@@ -14,6 +14,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import Ruleta from './pages/games/Ruleta';
+import RouletteOverlay from './pages/games/RouletteOverlay';
 import Disparos from './pages/games/Disparos';
 import BarraVida from './pages/games/BarraVida';
 import RankingDonadores from './pages/games/RankingDonadores';
@@ -75,6 +76,11 @@ function App() {
                     <Ruleta />
                   </ProtectedRoute>
                 } 
+              />
+              {/* Overlay flotante de ruleta (sin fondo, para OBS/captura) */}
+              <Route 
+                path="/roulette-overlay" 
+                element={<RouletteOverlay />} 
               />
               <Route 
                 path="/games/disparos" 

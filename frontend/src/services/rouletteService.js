@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
 
 class RouletteService {
   constructor() {
@@ -29,7 +29,7 @@ class RouletteService {
   // Obtener todas las configuraciones de ruleta
   async getConfigurations() {
     try {
-      const response = await fetch(`${API_URL}/api/roulette/configurations`, {
+      const response = await fetch(`${API_URL}/roulette/configurations`, {
         method: 'GET',
         headers: this.getHeaders()
       });
@@ -49,7 +49,7 @@ class RouletteService {
   // Obtener una configuración específica
   async getConfiguration(id) {
     try {
-      const response = await fetch(`${API_URL}/api/roulette/configurations/${id}`, {
+      const response = await fetch(`${API_URL}/roulette/configurations/${id}`, {
         method: 'GET',
         headers: this.getHeaders()
       });
@@ -69,7 +69,7 @@ class RouletteService {
   // Crear nueva configuración
   async createConfiguration(name, description, options) {
     try {
-      const response = await fetch(`${API_URL}/api/roulette/configurations`, {
+      const response = await fetch(`${API_URL}/roulette/configurations`, {
         method: 'POST',
         headers: this.getHeaders(),
         body: JSON.stringify({ name, description, options })
@@ -90,7 +90,7 @@ class RouletteService {
   // Actualizar configuración
   async updateConfiguration(id, name, description, options) {
     try {
-      const response = await fetch(`${API_URL}/api/roulette/configurations/${id}`, {
+      const response = await fetch(`${API_URL}/roulette/configurations/${id}`, {
         method: 'PUT',
         headers: this.getHeaders(),
         body: JSON.stringify({ name, description, options })
@@ -111,7 +111,7 @@ class RouletteService {
   // Eliminar configuración
   async deleteConfiguration(id) {
     try {
-      const response = await fetch(`${API_URL}/api/roulette/configurations/${id}`, {
+      const response = await fetch(`${API_URL}/roulette/configurations/${id}`, {
         method: 'DELETE',
         headers: this.getHeaders()
       });
@@ -131,7 +131,7 @@ class RouletteService {
   // Registrar un giro
   async recordSpin(rouletteConfigId, sessionId, winnerOption, spinNumber, rotationDegrees, durationSeconds, triggeredByDonation = false, donationId = null, viewerCount = 0) {
     try {
-      const response = await fetch(`${API_URL}/api/roulette/spin`, {
+      const response = await fetch(`${API_URL}/roulette/spin`, {
         method: 'POST',
         headers: this.getHeaders(),
         body: JSON.stringify({
@@ -162,7 +162,7 @@ class RouletteService {
   // Obtener historial de giros
   async getSpinHistory(sessionId, limit = 50, offset = 0) {
     try {
-      const response = await fetch(`${API_URL}/api/roulette/history/${sessionId}?limit=${limit}&offset=${offset}`, {
+      const response = await fetch(`${API_URL}/roulette/history/${sessionId}?limit=${limit}&offset=${offset}`, {
         method: 'GET',
         headers: this.getHeaders()
       });
@@ -182,7 +182,7 @@ class RouletteService {
   // Eliminar historial de una ruleta
   async deleteRouletteHistory(configId) {
     try {
-      const response = await fetch(`${API_URL}/api/roulette/history/${configId}`, {
+      const response = await fetch(`${API_URL}/roulette/history/${configId}`, {
         method: 'DELETE',
         headers: this.getHeaders()
       });
@@ -202,7 +202,7 @@ class RouletteService {
   // Obtener estadísticas de sesión
   async getSessionStats(sessionId) {
     try {
-      const response = await fetch(`${API_URL}/api/roulette/stats/${sessionId}`, {
+      const response = await fetch(`${API_URL}/roulette/stats/${sessionId}`, {
         method: 'GET',
         headers: this.getHeaders()
       });
@@ -222,7 +222,7 @@ class RouletteService {
   // Resetear estadísticas
   async resetRouletteStats(sessionId, configId) {
     try {
-      const response = await fetch(`${API_URL}/api/roulette/reset/${sessionId}/${configId}`, {
+      const response = await fetch(`${API_URL}/roulette/reset/${sessionId}/${configId}`, {
         method: 'POST',
         headers: this.getHeaders()
       });
@@ -242,7 +242,7 @@ class RouletteService {
   // Obtener configuración por defecto
   async getDefaultConfiguration() {
     try {
-      const response = await fetch(`${API_URL}/api/roulette/default-configuration`, {
+      const response = await fetch(`${API_URL}/roulette/default-configuration`, {
         method: 'GET',
         headers: this.getHeaders()
       });

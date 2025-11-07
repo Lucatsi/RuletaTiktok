@@ -10,7 +10,7 @@ class SocketService {
   connect() {
     if (this.socket?.connected) return this.socket;
 
-    this.socket = io(import.meta.env.VITE_WS_URL || 'http://localhost:5000', {
+    this.socket = io(import.meta.env.VITE_WS_URL || 'http://localhost:5001', {
       transports: ['websocket', 'polling'],
       autoConnect: true,
       reconnection: true,
@@ -143,6 +143,14 @@ class SocketService {
   // Obtener estado de conexión
   isConnected() {
     return this.socket?.connected || false;
+  }
+
+  // Obtener instancia del socket
+  getSocket() {
+    if (!this.socket) {
+      this.connect();
+    }
+    return this.socket;
   }
 }
 

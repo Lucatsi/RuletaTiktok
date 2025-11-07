@@ -413,6 +413,22 @@ function Ruleta() {
     };
   }, [user, acceptingParticipants, mode]);
 
+  // Emitir actualizaciones al overlay cuando cambien estados importantes
+  useEffect(() => {
+    const socket = socketService.getSocket();
+    if (socket && socket.connected) {
+      socket.emit('rouletteUpdate', {
+        rotation,
+        isSpinning,
+        winner,
+        showWinner,
+        isFinalWinner,
+        particles,
+        options: rouletteOptions
+      });
+    }
+  }, [rotation, isSpinning, winner, showWinner, isFinalWinner, particles, rouletteOptions]);
+
   const handleManualReconnect = () => {
     if (!user) return;
     const tiktokUsername = user.tiktokUsername || user.tiktok_username || null;
@@ -458,6 +474,15 @@ function Ruleta() {
     setIsSpinning(true);
     setRotation(totalRotation);
 
+    // Emitir evento de inicio de giro
+    const socket = socketService.getSocket();
+    if (socket && socket.connected) {
+      socket.emit('spinStart', {
+        rotation: totalRotation,
+        options: optionsSnapshot
+      });
+    }
+
     setTimeout(async () => {
   setIsSpinning(false);
   // Calcular el índice ganador según la flecha (top)
@@ -472,6 +497,15 @@ function Ruleta() {
   setIsFinalWinner(false);
   setShowWinner(true);
       const duration = Math.max(1, Math.round((Date.now() - start) / 1000));
+
+      // Emitir evento de fin de giro
+      if (socket && socket.connected) {
+        socket.emit('spinEnd', {
+          rotation: totalRotation,
+          winner: selectedOption,
+          isFinalWinner: false
+        });
+      }
       setStats(prev => ({ ...prev, totalSpins: prev.totalSpins + 1 }));
 
       try {
@@ -1090,6 +1124,24 @@ function Ruleta() {
               gap: '10px',
               zIndex: 35
             }}>
+              <button
+                onClick={() => {
+                  window.open('/roulette-overlay', 'RouletteOverlay', 'width=700,height=700,menubar=no,toolbar=no,location=no,status=no');
+                }}
+                style={{
+                  background: 'linear-gradient(135deg, #06b6d4, #0891b2)',
+                  border: 'none',
+                  borderRadius: '12px',
+                  padding: '10px 14px',
+                  color: 'white',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  fontSize: '0.85rem',
+                  boxShadow: '0 4px 15px rgba(6, 182, 212, 0.3)'
+                }}
+              >
+                🎬 Overlay
+              </button>
               <button
                 onClick={() => {
                   setShowHistory(!showHistory);
