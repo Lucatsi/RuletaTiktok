@@ -918,7 +918,7 @@ function Ruleta() {
           }}>
             <h3 style={{ color: 'white', margin: 0, fontWeight: 'bold' }}>💬 Chat en Vivo</h3>
             <button
-              onClick={() => navigate('/dashboard')}
+              onClick={() => navigate('/')}
               style={{
                 background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
                 border: 'none',
