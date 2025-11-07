@@ -15,15 +15,28 @@ const TikTokService = require('./services/tiktokService');
 
 const app = express();
 const server = http.createServer(app);
+
+// Configuración de CORS - permite localhost y dominios de producción
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://localhost:5173', // Vite dev server
+  'https://tiktokgamer.netlify.app',
+  process.env.FRONTEND_URL, // URL del frontend desde variable de entorno
+].filter(Boolean); // Eliminar valores undefined
+
 const io = socketIo(server, {
   cors: {
-    origin: ["http://localhost:3000", "http://localhost:3001"],
-    methods: ["GET", "POST"]
+    origin: allowedOrigins,
+    methods: ["GET", "POST"],
+    credentials: true
   }
 });
 
 // Middlewares de seguridad
-app.use(helmet());
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
 app.use(morgan('combined'));
 
 // Rate limiting
@@ -33,9 +46,18 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-// CORS
+// CORS mejorado
 app.use(cors({
-  origin: ['http://localhost:3000', 'http://localhost:3001'],
+  origin: function (origin, callback) {
+    // Permitir requests sin origin (mobile apps, curl, postman, etc.)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV === 'development') {
+      callback(null, true);
+    } else {
+      callback(new Error('No permitido por CORS'));
+    }
+  },
   credentials: true
 }));
 
