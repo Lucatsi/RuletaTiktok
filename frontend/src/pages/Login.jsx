@@ -82,26 +82,27 @@ const Login = () => {
     <Box 
       sx={{
         minHeight: '100vh',
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        background: 'linear-gradient(135deg, #1e3c72 0%, #2a5298 50%, #7e22ce 100%)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: 2,
+        padding: 3,
         position: 'relative',
         overflow: 'hidden',
         '&::before': {
           content: '""',
           position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'radial-gradient(circle at 20% 50%, rgba(255,255,255,0.1) 0%, transparent 50%)',
-          animation: 'pulse 4s ease-in-out infinite',
+          top: '-50%',
+          left: '-50%',
+          width: '200%',
+          height: '200%',
+          background: 'radial-gradient(circle, rgba(255,255,255,0.1) 1px, transparent 1px)',
+          backgroundSize: '50px 50px',
+          animation: 'moveGrid 20s linear infinite',
         },
-        '@keyframes pulse': {
-          '0%, 100%': { opacity: 0.5 },
-          '50%': { opacity: 1 },
+        '@keyframes moveGrid': {
+          '0%': { transform: 'translate(0, 0)' },
+          '100%': { transform: 'translate(50px, 50px)' },
         }
       }}
     >
@@ -116,10 +117,11 @@ const Login = () => {
             sx={{ 
               p: 5, 
               borderRadius: 4,
-              background: 'rgba(255, 255, 255, 0.95)',
-              backdropFilter: 'blur(10px)',
-              boxShadow: '0 8px 32px 0 rgba(31, 38, 135, 0.37)',
-              border: '1px solid rgba(255, 255, 255, 0.18)',
+              background: '#ffffff',
+              boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
+              border: 'none',
+              maxWidth: '500px',
+              width: '100%',
             }}
           >
             <motion.div variants={itemVariants}>
@@ -138,8 +140,8 @@ const Login = () => {
                   <GamepadIcon 
                     sx={{ 
                       fontSize: 80,
-                      color: '#667eea',
-                      filter: 'drop-shadow(0 4px 8px rgba(102, 126, 234, 0.3))'
+                      color: '#7e22ce',
+                      filter: 'drop-shadow(0 4px 12px rgba(126, 34, 206, 0.4))'
                     }} 
                   />
                 </motion.div>
@@ -149,16 +151,17 @@ const Login = () => {
                   gutterBottom 
                   fontWeight="800"
                   sx={{
-                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                    background: 'linear-gradient(135deg, #1e3c72 0%, #7e22ce 100%)',
                     backgroundClip: 'text',
                     WebkitBackgroundClip: 'text',
                     WebkitTextFillColor: 'transparent',
-                    mt: 2
+                    mt: 2,
+                    mb: 1
                   }}
                 >
                   Ruleta TikTok
                 </Typography>
-                <Typography variant="body1" color="text.secondary" sx={{ mt: 1 }}>
+                <Typography variant="body1" color="text.secondary" fontWeight="500" sx={{ mt: 1, mb: 2 }}>
                   Inicia sesión para acceder a tus juegos interactivos
                 </Typography>
               </Box>
@@ -283,16 +286,19 @@ const Login = () => {
                     fontSize: '1.1rem',
                     fontWeight: 'bold',
                     textTransform: 'none',
-                    background: 'linear-gradient(45deg, #667eea 30%, #764ba2 90%)',
-                    boxShadow: '0 4px 20px 0 rgba(102, 126, 234, 0.4)',
+                    background: 'linear-gradient(135deg, #1e3c72 0%, #7e22ce 100%)',
+                    boxShadow: '0 4px 15px rgba(126, 34, 206, 0.4)',
                     transition: 'all 0.3s ease',
                     '&:hover': {
-                      background: 'linear-gradient(45deg, #764ba2 30%, #667eea 90%)',
-                      boxShadow: '0 6px 25px 0 rgba(102, 126, 234, 0.6)',
+                      background: 'linear-gradient(135deg, #7e22ce 0%, #1e3c72 100%)',
+                      boxShadow: '0 6px 20px rgba(126, 34, 206, 0.6)',
                       transform: 'translateY(-2px)',
                     },
                     '&:active': {
                       transform: 'translateY(0)',
+                    },
+                    '&:disabled': {
+                      background: '#cccccc',
                     }
                   }}
                 >
@@ -314,11 +320,11 @@ const Login = () => {
                       to="/register" 
                       underline="none"
                       sx={{
-                        color: '#667eea',
+                        color: '#7e22ce',
                         fontWeight: 'bold',
                         transition: 'all 0.2s',
                         '&:hover': {
-                          color: '#764ba2',
+                          color: '#1e3c72',
                           textDecoration: 'underline'
                         }
                       }}
