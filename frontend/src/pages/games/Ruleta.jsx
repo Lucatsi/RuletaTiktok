@@ -401,13 +401,17 @@ function Ruleta() {
     // Manejar errores de conexión a TikTok
     const onError = (errorData) => {
       console.error('❌ Error de TikTok Live:', errorData);
+      console.error('❌ Tipo de error:', typeof errorData);
+      console.error('❌ Error detallado:', JSON.stringify(errorData, null, 2));
       setIsConnected(false);
       
       // Mostrar alerta al usuario
-      alert(`❌ Error de TikTok:\n\n${errorData.error}\n\n${errorData.details || ''}`);
+      const errorMessage = errorData?.error || errorData?.message || 'Error desconocido';
+      const errorDetails = errorData?.details || '';
+      alert(`❌ Error de TikTok:\n\n${errorMessage}\n\n${errorDetails}`);
       
       // También guardar el error en el estado para mostrarlo en la UI
-      setError(errorData.error);
+      setError(errorMessage);
     };
 
     socketService.onTikTokConnected(onConnected);

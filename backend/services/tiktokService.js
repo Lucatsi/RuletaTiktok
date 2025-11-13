@@ -40,8 +40,9 @@ class TikTokService {
           device_platform: 'web',
           region: 'ES'
         },
-        enableWebsocketUpgrade: true,
-        fetchRoomInfoOnConnect: true
+        enableWebsocketUpgrade: false, // ❌ TikTok ya no soporta WebSocket upgrade
+        fetchRoomInfoOnConnect: true,
+        requestPollingIntervalMs: 1000 // Usar polling cada 1 segundo
       });
 
       // Eventos de TikTok Live
