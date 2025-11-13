@@ -46,7 +46,9 @@ class TikTokService {
 
       // Eventos de TikTok Live
   tiktokLiveConnection.connect().then(state => {
-        console.log(`✅ Conectado al live de @${uniqueId}:`, state);
+        console.log(`✅ Conectado al live de @${uniqueId}`);
+        console.log('📊 Estado de la conexión:', JSON.stringify(state, null, 2));
+        
         // Intentar obtener viewers iniciales de roomInfo
         const initialViewers = (
           state?.roomInfo?.viewer_count ||
@@ -56,6 +58,8 @@ class TikTokService {
           state?.data?.userCount ||
           0
         );
+
+        console.log(`👥 Viewers iniciales: ${initialViewers}`);
 
   // Guardar estado actual
   this.status.set(userId, { connected: true, username: uniqueId, viewerCount: Number(initialViewers || 0) });
@@ -67,10 +71,26 @@ class TikTokService {
           viewerCount: initialViewers
         });
       }).catch(err => {
-        console.error('❌ Error conectando al live:', err);
+        console.error('❌ Error conectando al live de @' + uniqueId);
+        console.error('❌ Tipo de error:', err?.name);
+        console.error('❌ Mensaje de error:', err?.message);
+        console.error('❌ Detalles completos:', err);
+        
+        // Mensaje de error más específico
+        let errorMessage = 'No se pudo conectar al live de TikTok.';
+        
+        if (err?.message?.includes('LIVE has ended') || err?.message?.includes('not found')) {
+          errorMessage = `❌ El usuario @${uniqueId} no está en LIVE o no existe. Verifica:\n1. Que estés transmitiendo EN VIVO\n2. Que el nombre de usuario sea correcto (sin @)\n3. Que tu cuenta sea pública`;
+        } else if (err?.message?.includes('rate limit')) {
+          errorMessage = 'Demasiados intentos de conexión. Espera 1 minuto e intenta de nuevo.';
+        } else if (err?.message?.includes('region')) {
+          errorMessage = 'El LIVE no está disponible en esta región o está restringido.';
+        }
+        
         this.io.to(`game-${userId}`).emit('tiktok-error', {
-          error: 'No se pudo conectar al live. Verifica que estás EN VIVO, que el nombre es correcto y visible en tu región.',
-          code: err?.exception?.message || err?.info || 'connect_error'
+          error: errorMessage,
+          code: err?.exception?.message || err?.info || err?.message || 'connect_error',
+          details: err?.message
         });
       });
 

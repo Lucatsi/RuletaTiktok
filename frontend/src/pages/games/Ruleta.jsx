@@ -398,12 +398,25 @@ function Ruleta() {
       }
     };
 
+    // Manejar errores de conexión a TikTok
+    const onError = (errorData) => {
+      console.error('❌ Error de TikTok Live:', errorData);
+      setIsConnected(false);
+      
+      // Mostrar alerta al usuario
+      alert(`❌ Error de TikTok:\n\n${errorData.error}\n\n${errorData.details || ''}`);
+      
+      // También guardar el error en el estado para mostrarlo en la UI
+      setError(errorData.error);
+    };
+
     socketService.onTikTokConnected(onConnected);
     socketService.onTikTokDisconnected(onDisconnected);
     socketService.onTikTokChat(onChat);
   socketService.onTikTokLike(onLike);
   socketService.onTikTokViewers(onViewers);
     socketService.onTikTokGift(onGift);
+    socketService.onTikTokError(onError);
 
     return () => {
       socketService.removeAllEventListeners('tiktok-connected');
@@ -412,6 +425,7 @@ function Ruleta() {
       socketService.removeAllEventListeners('tiktok-like');
     socketService.removeAllEventListeners('tiktok-gift');
     socketService.removeAllEventListeners('tiktok-viewers');
+      socketService.removeAllEventListeners('tiktok-error');
     };
   }, [user, acceptingParticipants, mode]);
 
