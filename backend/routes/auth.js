@@ -63,9 +63,11 @@ router.post('/register', async (req, res) => {
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
+    console.log('🔐 Intento de login:', email);
 
     // Validaciones
     if (!email || !password) {
+      console.log('❌ Faltan credenciales');
       return res.status(400).json({ 
         message: 'Email y contraseña son requeridos' 
       });
@@ -73,15 +75,20 @@ router.post('/login', async (req, res) => {
 
     // Buscar usuario
     const user = await User.findByEmail(email);
+    console.log('👤 Usuario encontrado:', user ? `ID ${user.id}` : 'NO');
     if (!user) {
+      console.log('❌ Usuario no existe');
       return res.status(401).json({ 
         message: 'Credenciales inválidas' 
       });
     }
 
     // Verificar contraseña
+    console.log('🔑 Verificando contraseña...');
     const isValidPassword = await User.verifyPassword(password, user.password);
+    console.log('🔑 Contraseña válida:', isValidPassword);
     if (!isValidPassword) {
+      console.log('❌ Contraseña incorrecta');
       return res.status(401).json({ 
         message: 'Credenciales inválidas' 
       });

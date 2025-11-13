@@ -36,10 +36,10 @@ const Login = () => {
     setLoading(true);
     
     try {
-      const result = await login({
-        email: formData.email,
-        password: formData.password
-      });
+      console.log('📧 Email:', formData.email);
+      console.log('🔑 Password length:', formData.password?.length);
+      
+      const result = await login(formData.email, formData.password);
       
       if (result.success) {
         toast.success('¡Bienvenido de vuelta!');
@@ -48,6 +48,7 @@ const Login = () => {
         toast.error(result.message || 'Email o contraseña incorrectos');
       }
     } catch (error) {
+      console.error('❌ Error en login:', error);
       toast.error('Error de conexión');
     } finally {
       setLoading(false);
