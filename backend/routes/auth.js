@@ -62,12 +62,14 @@ router.post('/register', async (req, res) => {
 // Login de usuario
 router.post('/login', async (req, res) => {
   try {
+    console.log('📦 Body completo recibido:', JSON.stringify(req.body));
     const { email, password } = req.body;
-    console.log('🔐 Intento de login:', email);
+    console.log('🔐 Email extraído:', email);
+    console.log('🔑 Password extraído:', password ? '***' : 'undefined');
 
     // Validaciones
     if (!email || !password) {
-      console.log('❌ Faltan credenciales');
+      console.log('❌ Faltan credenciales - email:', !!email, 'password:', !!password);
       return res.status(400).json({ 
         message: 'Email y contraseña son requeridos' 
       });
