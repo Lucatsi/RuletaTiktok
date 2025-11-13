@@ -10,7 +10,11 @@ class SocketService {
   connect() {
     if (this.socket?.connected) return this.socket;
 
-    this.socket = io(import.meta.env.VITE_WS_URL || 'http://localhost:5001', {
+    // Usar la misma URL del backend (sin /api)
+    const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+    const WS_URL = API_URL.replace('/api', '');
+    
+    this.socket = io(WS_URL, {
       transports: ['websocket', 'polling'],
       autoConnect: true,
       reconnection: true,
