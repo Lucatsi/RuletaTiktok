@@ -25,9 +25,26 @@ const allowedOrigins = [
   process.env.FRONTEND_URL, // URL del frontend desde variable de entorno
 ].filter(Boolean); // Eliminar valores undefined
 
+// Función para verificar si el origen está permitido
+const isOriginAllowed = (origin) => {
+  if (!origin) return true; // Permitir requests sin origin
+  if (allowedOrigins.includes(origin)) return true;
+  // Permitir cualquier dominio de Netlify
+  if (origin.endsWith('.netlify.app')) return true;
+  // Permitir en desarrollo
+  if (process.env.NODE_ENV === 'development') return true;
+  return false;
+};
+
 const io = socketIo(server, {
   cors: {
-    origin: allowedOrigins,
+    origin: (origin, callback) => {
+      if (isOriginAllowed(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('No permitido por CORS'));
+      }
+    },
     methods: ["GET", "POST"],
     credentials: true
   }
@@ -49,12 +66,10 @@ app.use('/api/', limiter);
 // CORS mejorado
 app.use(cors({
   origin: function (origin, callback) {
-    // Permitir requests sin origin (mobile apps, curl, postman, etc.)
-    if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV === 'development') {
+    if (isOriginAllowed(origin)) {
       callback(null, true);
     } else {
+      console.error(`❌ Origen bloqueado por CORS: ${origin}`);
       callback(new Error('No permitido por CORS'));
     }
   },

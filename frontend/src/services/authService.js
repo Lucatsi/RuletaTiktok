@@ -30,6 +30,7 @@ axios.interceptors.response.use(
 
 const authService = {
   async login(email, password) {
+    console.log('🔐 Intentando login a:', `${API_URL}/auth/login`);
     const response = await axios.post(`${API_URL}/auth/login`, {
       email,
       password,
@@ -38,7 +39,10 @@ const authService = {
   },
 
   async register(userData) {
+    console.log('📝 Intentando registro a:', `${API_URL}/auth/register`);
+    console.log('📦 Datos a enviar:', userData);
     const response = await axios.post(`${API_URL}/auth/register`, userData);
+    console.log('✅ Respuesta del servidor:', response.data);
     return response.data;
   },
 
