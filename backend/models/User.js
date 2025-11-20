@@ -6,13 +6,25 @@ class User {
   static async create({ email, password, username }) {
     const hashedPassword = await bcrypt.hash(password, 12);
     
+    // Insert compatible con esquemas "password" o "password_hash"
     const query = `
       INSERT INTO users (email, password, username, created_at)
       VALUES ($1, $2, $3, NOW())
       RETURNING id, email, username, created_at
     `;
 
-    const result = await pool.query(query, [email, hashedPassword, username]);
+    let result;
+    try {
+      result = await pool.query(query, [email, hashedPassword, username]);
+    } catch (err) {
+      // Si falla por falta de columna password, intentar con password_hash
+      const alt = `
+        INSERT INTO users (email, password_hash, username, created_at)
+        VALUES ($1, $2, $3, NOW())
+        RETURNING id, email, username, created_at
+      `;
+      result = await pool.query(alt, [email, hashedPassword, username]);
+    }
     return result.rows[0];
   }
 
