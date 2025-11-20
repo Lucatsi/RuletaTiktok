@@ -17,7 +17,7 @@ import Ruleta from './pages/games/Ruleta';
 import RouletteOverlay from './pages/games/RouletteOverlay';
 import Disparos from './pages/games/Disparos';
 import BarraVida from './pages/games/BarraVida';
-import RankingDonadores from './pages/games/RankingDonadores';
+import Subasta from './pages/games/Subasta';
 
 const theme = createTheme({
   palette: {
@@ -102,7 +102,7 @@ function App() {
                 path="/games/ranking" 
                 element={
                   <ProtectedRoute>
-                    <RankingDonadores />
+                    <Subasta />
                   </ProtectedRoute>
                 } 
               />

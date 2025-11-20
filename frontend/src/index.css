@@ -90,3 +90,54 @@ body {
 .notification.chat {
   border-left: 4px solid #45b7d1;
 }
+
+/* Responsive Design */
+@media (max-width: 1024px) {
+  .roulette-container {
+    max-width: 500px !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .roulette-container {
+    max-width: 400px !important;
+  }
+  
+  .chat-sidebar {
+    width: 100% !important;
+    max-height: 200px !important;
+  }
+  
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .roulette-container {
+    max-width: 90vw !important;
+    padding: 8px !important;
+  }
+  
+  .game-buttons {
+    flex-direction: column !important;
+    gap: 8px !important;
+  }
+  
+  .stats-grid {
+    grid-template-columns: 1fr !important;
+  }
+  
+  .header-controls {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+}
+
+/* Scroll suave para móviles */
+@media (max-width: 768px) {
+  .overflow-y-auto {
+    -webkit-overflow-scrolling: touch;
+  }
+}
+

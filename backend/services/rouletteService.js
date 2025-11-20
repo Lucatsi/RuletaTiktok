@@ -1,8 +1,30 @@
 const db = require('../models/database');
 
+// Datos en memoria para cuando no hay DB
+let inMemoryConfigs = [];
+let inMemoryHistory = [];
+let inMemoryStats = [];
+let nextConfigId = 1;
+let nextHistoryId = 1;
+let nextStatsId = 1;
+
+// Verificar si la DB está disponible
+const isDBAvailable = () => {
+  return db.dbAvailable && db.dbAvailable();
+};
+
 class RouletteService {
   // Obtener todas las configuraciones de ruleta de un usuario
   async getRouletteConfigurations(userId) {
+    if (!isDBAvailable()) {
+      console.log('⚠️ Obteniendo configuraciones de ruleta desde memoria');
+      return inMemoryConfigs.filter(c => c.user_id === userId && c.is_active)
+        .sort((a, b) => {
+          if (a.is_default !== b.is_default) return b.is_default ? 1 : -1;
+          return new Date(b.created_at) - new Date(a.created_at);
+        });
+    }
+
     const query = `
       SELECT id, name, description, options, is_default, is_active, created_at, updated_at
       FROM roulette_configurations 
@@ -15,6 +37,11 @@ class RouletteService {
 
   // Obtener una configuración específica
   async getRouletteConfiguration(configId) {
+    if (!isDBAvailable()) {
+      console.log('⚠️ Obteniendo configuración desde memoria');
+      return inMemoryConfigs.find(c => c.id === configId && c.is_active);
+    }
+
     const query = `
       SELECT id, user_id, name, description, options, is_default, is_active, created_at, updated_at
       FROM roulette_configurations 
@@ -26,6 +53,23 @@ class RouletteService {
 
   // Crear nueva configuración de ruleta
   async createRouletteConfiguration(userId, name, description, options) {
+    if (!isDBAvailable()) {
+      console.log('💾 Creando configuración de ruleta en memoria');
+      const newConfig = {
+        id: nextConfigId++,
+        user_id: userId,
+        name,
+        description,
+        options,
+        is_default: false,
+        is_active: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      inMemoryConfigs.push(newConfig);
+      return newConfig;
+    }
+
     const query = `
       INSERT INTO roulette_configurations (user_id, name, description, options)
       VALUES ($1, $2, $3, $4)
@@ -218,6 +262,17 @@ class RouletteService {
 
   // Obtener configuración por defecto
   async getDefaultConfiguration(userId) {
+    if (!isDBAvailable()) {
+      console.log('⚠️ Obteniendo configuración por defecto desde memoria');
+      const userConfigs = inMemoryConfigs.filter(c => (c.user_id === userId || c.is_default) && c.is_active);
+      userConfigs.sort((a, b) => {
+        if (a.user_id !== b.user_id) return a.user_id === userId ? -1 : 1;
+        if (a.is_default !== b.is_default) return b.is_default ? 1 : -1;
+        return 0;
+      });
+      return userConfigs[0];
+    }
+
     const query = `
       SELECT id, name, description, options, is_default, is_active, created_at, updated_at
       FROM roulette_configurations 

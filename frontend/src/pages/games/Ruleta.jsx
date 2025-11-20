@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import TikTokNotification from '../../components/TikTokNotification';
 import socketService from '../../services/socketService';
 import rouletteService from '../../services/rouletteService';
@@ -6,6 +7,7 @@ import { useAuth } from '../../contexts/AuthContext.jsx';
 
 function Ruleta() {
   const { user } = useAuth();
+  const navigate = useNavigate();
 
   // Estado principal
   const [activeTab, setActiveTab] = useState('both');
@@ -396,12 +398,29 @@ function Ruleta() {
       }
     };
 
+    // Manejar errores de conexión a TikTok
+    const onError = (errorData) => {
+      console.error('❌ Error de TikTok Live:', errorData);
+      console.error('❌ Tipo de error:', typeof errorData);
+      console.error('❌ Error detallado:', JSON.stringify(errorData, null, 2));
+      setIsConnected(false);
+      
+      // Mostrar alerta al usuario
+      const errorMessage = errorData?.error || errorData?.message || 'Error desconocido';
+      const errorDetails = errorData?.details || '';
+      alert(`❌ Error de TikTok:\n\n${errorMessage}\n\n${errorDetails}`);
+      
+      // También guardar el error en el estado para mostrarlo en la UI
+      setError(errorMessage);
+    };
+
     socketService.onTikTokConnected(onConnected);
     socketService.onTikTokDisconnected(onDisconnected);
     socketService.onTikTokChat(onChat);
   socketService.onTikTokLike(onLike);
   socketService.onTikTokViewers(onViewers);
     socketService.onTikTokGift(onGift);
+    socketService.onTikTokError(onError);
 
     return () => {
       socketService.removeAllEventListeners('tiktok-connected');
@@ -410,6 +429,7 @@ function Ruleta() {
       socketService.removeAllEventListeners('tiktok-like');
     socketService.removeAllEventListeners('tiktok-gift');
     socketService.removeAllEventListeners('tiktok-viewers');
+      socketService.removeAllEventListeners('tiktok-error');
     };
   }, [user, acceptingParticipants, mode]);
 
@@ -890,26 +910,53 @@ function Ruleta() {
         </div>
       ))}
 
-  <div style={{ display: 'flex', height: '100vh' }}>
+  <div style={{ display: 'flex', height: '100vh', flexDirection: window.innerWidth < 768 ? 'column' : 'row', overflow: 'hidden' }}>
         {/* Columna izquierda: Chat en vivo */}
         <div style={{
-          width: '380px',
+          width: window.innerWidth < 768 ? '100%' : window.innerWidth < 1024 ? '300px' : '380px',
+          maxHeight: window.innerWidth < 768 ? '180px' : '100vh',
+          minHeight: window.innerWidth < 768 ? '180px' : 'auto',
           background: 'linear-gradient(to bottom, rgba(0, 0, 0, 0.4), rgba(59, 130, 246, 0.2), rgba(0, 0, 0, 0.4))',
           backdropFilter: 'blur(20px)',
-          borderRight: '1px solid rgba(59, 130, 246, 0.35)',
+          borderRight: window.innerWidth < 768 ? 'none' : '1px solid rgba(59, 130, 246, 0.35)',
+          borderBottom: window.innerWidth < 768 ? '1px solid rgba(59, 130, 246, 0.35)' : 'none',
           display: 'flex',
           flexDirection: 'column',
-      boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
-      height: '100vh',
-      maxHeight: '100vh',
-      overflow: 'hidden'
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+          overflow: 'hidden',
+          flexShrink: 0
         }}>
           <div style={{
             padding: '16px',
             borderBottom: '1px solid rgba(59, 130, 246, 0.35)',
-            background: 'linear-gradient(45deg, rgba(59, 130, 246, 0.25), rgba(147, 51, 234, 0.15))'
+            background: 'linear-gradient(45deg, rgba(59, 130, 246, 0.25), rgba(147, 51, 234, 0.15))',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center'
           }}>
             <h3 style={{ color: 'white', margin: 0, fontWeight: 'bold' }}>💬 Chat en Vivo</h3>
+            <button
+              onClick={() => navigate('/')}
+              style={{
+                background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '8px 12px',
+                color: 'white',
+                fontWeight: '600',
+                cursor: 'pointer',
+                fontSize: '0.75rem',
+                boxShadow: '0 2px 8px rgba(99, 102, 241, 0.3)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'all 0.3s ease'
+              }}
+              onMouseEnter={(e) => e.target.style.transform = 'scale(1.05)'}
+              onMouseLeave={(e) => e.target.style.transform = 'scale(1)'}
+            >
+              🏠 Inicio
+            </button>
           </div>
           <div style={{ flex: 1, overflowY: 'auto' }}>
             {chatMessages.length === 0 ? (
@@ -942,21 +989,28 @@ function Ruleta() {
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          justifyContent: 'center',
-          padding: '32px',
-          position: 'relative'
+          justifyContent: 'flex-start',
+          padding: window.innerWidth < 768 ? '12px' : '20px',
+          position: 'relative',
+          minHeight: window.innerWidth < 768 ? 'calc(100vh - 180px)' : 'auto',
+          overflowY: 'auto',
+          overflowX: 'hidden'
         }}>
+
           {/* Header con estado */}
           <div style={{
             position: 'absolute',
-            top: '24px',
-            left: '24px',
-            right: '24px',
+            top: window.innerWidth < 768 ? '8px' : '24px',
+            left: window.innerWidth < 768 ? '8px' : '24px',
+            right: window.innerWidth < 768 ? '8px' : '24px',
             display: 'flex',
+            flexDirection: window.innerWidth < 640 ? 'column' : 'row',
             justifyContent: 'space-between',
-            alignItems: 'center'
+            alignItems: window.innerWidth < 640 ? 'stretch' : 'center',
+            gap: window.innerWidth < 640 ? '8px' : '0',
+            zIndex: 10
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: window.innerWidth < 640 ? '8px' : '16px', flexWrap: 'wrap' }}>
               <div style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -1063,35 +1117,128 @@ function Ruleta() {
           {/* (Título y subtítulo removidos) */}
 
           {/* Ruleta principal + botones laterales */}
-          <div style={{ position: 'relative', marginBottom: '32px' }}>
-            {/* Acciones laterales (izquierda) */}
-            <div style={{
-              position: 'absolute',
-              top: '50%',
-              left: '-120px',
-              transform: 'translateY(-50%)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '10px',
-              zIndex: 35
-            }}>
+          <div style={{ position: 'relative', marginTop: window.innerWidth < 768 ? '60px' : '80px', marginBottom: window.innerWidth < 1200 ? '80px' : '32px', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            
+            {/* Botones de control - Arriba en móvil/tablet, laterales en desktop */}
+            {window.innerWidth < 1200 ? (
+              /* Botones horizontales arriba para móvil y tablet */
+              <div style={{
+                display: 'flex',
+                gap: '10px',
+                marginBottom: '20px',
+                flexWrap: 'wrap',
+                justifyContent: 'center',
+                width: '100%',
+                maxWidth: '640px'
+              }}>
+                <button
+                  onClick={resetStats}
+                  disabled={loading}
+                  style={{
+                    background: 'linear-gradient(135deg, #ef4444, #dc2626)',
+                    border: 'none',
+                    borderRadius: '12px',
+                    padding: '10px 16px',
+                    color: 'white',
+                    fontWeight: 'bold',
+                    cursor: 'pointer',
+                    fontSize: '0.85rem',
+                    boxShadow: '0 4px 15px rgba(239, 68, 68, 0.3)',
+                    opacity: loading ? 0.6 : 1,
+                    flex: window.innerWidth < 480 ? '1 1 calc(50% - 5px)' : '0 1 auto'
+                  }}
+                >
+                  🔄 Resetear
+                </button>
+                <button
+                  onClick={openConfig}
+                  disabled={loading}
+                  style={{
+                    background: 'linear-gradient(135deg, #10b981, #059669)',
+                    border: 'none',
+                    borderRadius: '12px',
+                    padding: '10px 16px',
+                    color: 'white',
+                    fontWeight: 'bold',
+                    cursor: loading ? 'not-allowed' : 'pointer',
+                    fontSize: '0.85rem',
+                    boxShadow: '0 4px 15px rgba(16, 185, 129, 0.3)',
+                    opacity: loading ? 0.6 : 1,
+                    flex: window.innerWidth < 480 ? '1 1 calc(50% - 5px)' : '0 1 auto'
+                  }}
+                >
+                  ⚙️ Configurar
+                </button>
+                <button
+                  onClick={() => setShowHistory(!showHistory)}
+                  disabled={loading}
+                  style={{
+                    background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
+                    border: 'none',
+                    borderRadius: '12px',
+                    padding: '10px 16px',
+                    color: 'white',
+                    fontWeight: 'bold',
+                    cursor: loading ? 'not-allowed' : 'pointer',
+                    fontSize: '0.85rem',
+                    boxShadow: '0 4px 15px rgba(139, 92, 246, 0.3)',
+                    opacity: loading ? 0.6 : 1,
+                    flex: window.innerWidth < 480 ? '1 1 calc(50% - 5px)' : '0 1 auto'
+                  }}
+                >
+                  📜 Historial
+                </button>
+                <button
+                  onClick={deleteHistory}
+                  disabled={loading || !currentConfigId}
+                  style={{
+                    background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                    border: 'none',
+                    borderRadius: '12px',
+                    padding: '10px 16px',
+                    color: 'white',
+                    fontWeight: 'bold',
+                    cursor: (loading || !currentConfigId) ? 'not-allowed' : 'pointer',
+                    fontSize: '0.85rem',
+                    boxShadow: '0 4px 15px rgba(245, 158, 11, 0.3)',
+                    opacity: (loading || !currentConfigId) ? 0.6 : 1,
+                    flex: window.innerWidth < 480 ? '1 1 calc(50% - 5px)' : '0 1 auto'
+                  }}
+                >
+                  🗑️ Borrar
+                </button>
+              </div>
+            ) : (
+              <>
+                {/* Acciones laterales (izquierda) - Solo desktop */}
+                <div style={{
+                  position: 'absolute',
+                  top: '50%',
+                  left: '0px',
+                  transform: 'translateY(-50%)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '10px',
+                  zIndex: 35
+                }}>
               <button
                 onClick={resetStats}
                 disabled={loading}
                 style={{
                   background: 'linear-gradient(135deg, #ef4444, #dc2626)',
                   border: 'none',
-                  borderRadius: '12px',
-                  padding: '10px 14px',
+                  borderRadius: '10px',
+                  padding: '8px 12px',
                   color: 'white',
-                  fontWeight: 'bold',
+                  fontWeight: '600',
                   cursor: 'pointer',
-                  fontSize: '0.85rem',
-                  boxShadow: '0 4px 15px rgba(239, 68, 68, 0.3)',
-                  opacity: loading ? 0.6 : 1
+                  fontSize: '0.75rem',
+                  boxShadow: '0 2px 8px rgba(239, 68, 68, 0.3)',
+                  opacity: loading ? 0.6 : 1,
+                  whiteSpace: 'nowrap'
                 }}
               >
-                🔄 Resetear
+                🔄 Reset
               </button>
               <button
                 onClick={openConfig}
@@ -1099,25 +1246,26 @@ function Ruleta() {
                 style={{
                   background: 'linear-gradient(135deg, #10b981, #059669)',
                   border: 'none',
-                  borderRadius: '12px',
-                  padding: '10px 14px',
+                  borderRadius: '10px',
+                  padding: '8px 12px',
                   color: 'white',
-                  fontWeight: 'bold',
+                  fontWeight: '600',
                   cursor: loading ? 'not-allowed' : 'pointer',
-                  fontSize: '0.85rem',
-                  boxShadow: '0 4px 15px rgba(16, 185, 129, 0.3)',
-                  opacity: loading ? 0.6 : 1
+                  fontSize: '0.75rem',
+                  boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)',
+                  opacity: loading ? 0.6 : 1,
+                  whiteSpace: 'nowrap'
                 }}
               >
-                ⚙️ Configurar
+                ⚙️ Config
               </button>
             </div>
 
-            {/* Acciones laterales (derecha) */}
+            {/* Acciones laterales (derecha) - Solo desktop */}
             <div style={{
               position: 'absolute',
               top: '50%',
-              right: '-120px',
+              right: '0px',
               transform: 'translateY(-50%)',
               display: 'flex',
               flexDirection: 'column',
@@ -1131,16 +1279,17 @@ function Ruleta() {
                 style={{
                   background: 'linear-gradient(135deg, #06b6d4, #0891b2)',
                   border: 'none',
-                  borderRadius: '12px',
-                  padding: '10px 14px',
+                  borderRadius: '10px',
+                  padding: '8px 12px',
                   color: 'white',
-                  fontWeight: 'bold',
+                  fontWeight: '600',
                   cursor: 'pointer',
-                  fontSize: '0.85rem',
-                  boxShadow: '0 4px 15px rgba(6, 182, 212, 0.3)'
+                  fontSize: '0.75rem',
+                  boxShadow: '0 2px 8px rgba(6, 182, 212, 0.3)',
+                  whiteSpace: 'nowrap'
                 }}
               >
-                🎬 Overlay
+                🎬 OBS
               </button>
               <button
                 onClick={() => {
@@ -1151,17 +1300,18 @@ function Ruleta() {
                 style={{
                   background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
                   border: 'none',
-                  borderRadius: '12px',
-                  padding: '10px 14px',
+                  borderRadius: '10px',
+                  padding: '8px 12px',
                   color: 'white',
-                  fontWeight: 'bold',
+                  fontWeight: '600',
                   cursor: loading ? 'not-allowed' : 'pointer',
-                  fontSize: '0.85rem',
-                  boxShadow: '0 4px 15px rgba(139, 92, 246, 0.3)',
-                  opacity: loading ? 0.6 : 1
+                  fontSize: '0.75rem',
+                  boxShadow: '0 2px 8px rgba(139, 92, 246, 0.3)',
+                  opacity: loading ? 0.6 : 1,
+                  whiteSpace: 'nowrap'
                 }}
               >
-                📊 Historial
+                � Log
               </button>
               <button
                 onClick={deleteHistory}
@@ -1169,19 +1319,23 @@ function Ruleta() {
                 style={{
                   background: 'linear-gradient(135deg, #f59e0b, #d97706)',
                   border: 'none',
-                  borderRadius: '12px',
-                  padding: '10px 14px',
+                  borderRadius: '10px',
+                  padding: '8px 12px',
                   color: 'white',
-                  fontWeight: 'bold',
+                  fontWeight: '600',
                   cursor: (loading || !currentConfigId) ? 'not-allowed' : 'pointer',
-                  fontSize: '0.85rem',
-                  boxShadow: '0 4px 15px rgba(245, 158, 11, 0.3)',
-                  opacity: (loading || !currentConfigId) ? 0.6 : 1
+                  fontSize: '0.75rem',
+                  boxShadow: '0 2px 8px rgba(245, 158, 11, 0.3)',
+                  opacity: (loading || !currentConfigId) ? 0.6 : 1,
+                  whiteSpace: 'nowrap'
                 }}
               >
-                🗑️ Borrar
+                🗑️ Del
               </button>
             </div>
+              </>
+            )}
+            
             {/* Base de la ruleta */}
             <div style={{ position: 'relative' }}>
               {/* Soporte/Base */}
@@ -1200,11 +1354,11 @@ function Ruleta() {
               }}></div>
               
               {/* Aro exterior con luces LED */}
-              <div style={{ position: 'relative' }}>
+              <div style={{ position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
                 <div style={{
                   position: 'relative',
-                  width: '640px',
-                  height: '640px',
+                  width: 'min(500px, 85vw)',
+                  height: 'min(500px, 85vw)',
                   borderRadius: '50%',
                   boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
                   padding: '8px',
@@ -1534,9 +1688,9 @@ function Ruleta() {
             onClick={spinRoulette}
             disabled={isSpinning}
             style={{
-              padding: '24px 48px',
-              borderRadius: '16px',
-              fontSize: '1.5rem',
+              padding: window.innerWidth < 768 ? '16px 32px' : '18px 36px',
+              borderRadius: '12px',
+              fontSize: window.innerWidth < 768 ? '1rem' : '1.2rem',
               fontWeight: 'bold',
               border: 'none',
               cursor: isSpinning ? 'not-allowed' : 'pointer',
@@ -1561,17 +1715,17 @@ function Ruleta() {
           {/* Stats rápidas - abajo a la izquierda */}
           <div style={{
             position: 'absolute',
-                bottom: '24px',
-            left: '24px',
+                bottom: window.innerWidth < 768 ? '12px' : '24px',
+            left: window.innerWidth < 768 ? '12px' : '24px',
             display: 'flex',
-                width: '240px',
-                height: '120px',
+                width: window.innerWidth < 768 ? '180px' : '200px',
+                height: window.innerWidth < 768 ? '90px' : '100px',
           }}>
             <div style={{
               background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.35), rgba(236, 72, 153, 0.35))',
               backdropFilter: 'blur(16px)',
               color: 'white',
-              padding: '12px 18px',
+              padding: window.innerWidth < 768 ? '8px 12px' : '10px 14px',
               borderRadius: '12px',
               textAlign: 'center',
               border: '1px solid rgba(139, 92, 246, 0.45)',
@@ -1582,15 +1736,15 @@ function Ruleta() {
               justifyContent: 'center',
               width: '50%'
             }}>
-              <div style={{ fontSize: '0.875rem', opacity: 0.9 }}>🎯</div>
-              <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#60a5fa' }}>{stats.totalSpins}</div>
-              <div style={{ fontSize: '0.8rem', opacity: 0.9, color: '#e9d5ff', marginTop: '2px', fontWeight: 700 }}>GIROS</div>
+              <div style={{ fontSize: window.innerWidth < 768 ? '0.7rem' : '0.75rem', opacity: 0.9 }}>🎯</div>
+              <div style={{ fontSize: window.innerWidth < 768 ? '1.3rem' : '1.5rem', fontWeight: 'bold', color: '#60a5fa' }}>{stats.totalSpins}</div>
+              <div style={{ fontSize: window.innerWidth < 768 ? '0.65rem' : '0.7rem', opacity: 0.9, color: '#e9d5ff', marginTop: '2px', fontWeight: 700 }}>GIROS</div>
             </div>
             <div style={{
               background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.35), rgba(5, 150, 105, 0.35))',
               backdropFilter: 'blur(16px)',
               color: 'white',
-              padding: '12px 18px',
+              padding: window.innerWidth < 768 ? '8px 12px' : '10px 14px',
               borderRadius: '12px',
               textAlign: 'center',
               border: '1px solid rgba(34, 197, 94, 0.45)',
@@ -1601,9 +1755,9 @@ function Ruleta() {
               justifyContent: 'center',
               width: '50%'
             }}>
-              <div style={{ fontSize: '0.875rem', opacity: 0.9 }}>🎁</div>
-              <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#4ade80' }}>{stats.totalGifts}</div>
-              <div style={{ fontSize: '0.8rem', opacity: 0.9, color: '#d1fae5', marginTop: '2px', fontWeight: 700 }}>REGALOS</div>
+              <div style={{ fontSize: window.innerWidth < 768 ? '0.7rem' : '0.75rem', opacity: 0.9 }}>🎁</div>
+              <div style={{ fontSize: window.innerWidth < 768 ? '1.3rem' : '1.5rem', fontWeight: 'bold', color: '#4ade80' }}>{stats.totalGifts}</div>
+              <div style={{ fontSize: window.innerWidth < 768 ? '0.65rem' : '0.7rem', opacity: 0.9, color: '#d1fae5', marginTop: '2px', fontWeight: 700 }}>REGALOS</div>
             </div>
           </div>
         </div>
