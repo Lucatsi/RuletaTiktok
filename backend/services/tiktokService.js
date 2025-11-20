@@ -34,16 +34,36 @@ class TikTokService {
 
       console.log(`🔄 Conectando al live de @${uniqueId} para usuario ${userId}`);
 
-      const tiktokLiveConnection = new WebcastPushConnection(uniqueId, {
+      // Configuración optimizada de la conexión
+      const connectionConfig = {
+        // Parámetros del cliente para simular navegador real
         clientParams: {
           app_language: 'es-ES',
-          device_platform: 'web',
-          region: 'ES'
+          device_platform: 'web_pc',
+          browser_language: 'es-ES',
+          browser_name: 'Mozilla',
+          browser_online: true,
+          browser_platform: 'Win32',
+          browser_version: '5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         },
-        enableWebsocketUpgrade: false, // ❌ TikTok ya no soporta WebSocket upgrade
+        // Configuración de solicitud
+        requestOptions: {
+          timeout: 10000,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
+            'Referer': 'https://www.tiktok.com/'
+          }
+        },
+        // Usar polling en lugar de WebSocket
+        enableExtendedGiftInfo: true,
+        enableWebsocketUpgrade: false,
         fetchRoomInfoOnConnect: true,
-        requestPollingIntervalMs: 1000 // Usar polling cada 1 segundo
-      });
+        processInitialData: true,
+        requestPollingIntervalMs: 1000
+      };
+
+      const tiktokLiveConnection = new WebcastPushConnection(uniqueId, connectionConfig);
 
       // Eventos de TikTok Live
   tiktokLiveConnection.connect().then(state => {
@@ -79,18 +99,24 @@ class TikTokService {
         
         // Mensaje de error más específico
         let errorMessage = 'No se pudo conectar al live de TikTok.';
+        let errorCode = err?.exception?.message || err?.info || err?.message || 'connect_error';
         
-        if (err?.message?.includes('LIVE has ended') || err?.message?.includes('not found')) {
-          errorMessage = `❌ El usuario @${uniqueId} no está en LIVE o no existe. Verifica:\n1. Que estés transmitiendo EN VIVO\n2. Que el nombre de usuario sea correcto (sin @)\n3. Que tu cuenta sea pública`;
-        } else if (err?.message?.includes('rate limit')) {
-          errorMessage = 'Demasiados intentos de conexión. Espera 1 minuto e intenta de nuevo.';
-        } else if (err?.message?.includes('region')) {
-          errorMessage = 'El LIVE no está disponible en esta región o está restringido.';
+        // Errores comunes y soluciones
+        if (err?.message?.includes('websocket upgrade') || errorCode?.includes('websocket upgrade')) {
+          errorMessage = `⚠️ No se pudo conectar automáticamente.\n\nSoluciones:\n1. Verifica que @${uniqueId} esté EN VIVO ahora\n2. Espera 30 segundos y vuelve a intentar`;
+        } else if (err?.message?.includes('LIVE has ended') || err?.message?.includes('not found') || err?.message?.includes('User not found')) {
+          errorMessage = `❌ El usuario @${uniqueId} no está en LIVE o no existe.\n\nVerifica:\n✓ Que estés transmitiendo EN VIVO ahora\n✓ Que el nombre sea correcto (sin @)\n✓ Que tu cuenta sea pública`;
+        } else if (err?.message?.includes('rate limit') || err?.message?.includes('Too many requests')) {
+          errorMessage = '⏱️ Demasiados intentos de conexión.\n\nEspera 1-2 minutos e intenta de nuevo.';
+        } else if (err?.message?.includes('region') || err?.message?.includes('geo')) {
+          errorMessage = '🌍 El LIVE no está disponible en esta región o está restringido.';
+        } else if (err?.message?.includes('timeout')) {
+          errorMessage = '⏱️ Tiempo de espera agotado.\n\nVerifica tu conexión a internet y vuelve a intentar.';
         }
         
         this.io.to(`game-${userId}`).emit('tiktok-error', {
           error: errorMessage,
-          code: err?.exception?.message || err?.info || err?.message || 'connect_error',
+          code: errorCode,
           details: err?.message
         });
       });
